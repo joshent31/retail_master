@@ -1,0 +1,267 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-01-01 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "branch",
+  "warehouse",
+  "session_date",
+  "status",
+  "opening_float",
+  "column_break_times",
+  "opened_by",
+  "opened_at",
+  "closed_by",
+  "closed_at",
+  "section_totals",
+  "invoice_count",
+  "sales_total",
+  "cash_sales",
+  "card_sales",
+  "upi_sales",
+  "credit_sales",
+  "column_break_totals",
+  "tax_total",
+  "discount_total",
+  "change_total",
+  "closing_cash",
+  "expected_cash",
+  "variance",
+  "section_notes",
+  "notes",
+  "offline_uuid"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "RDS-.YYYY.-",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Branch",
+   "options": "Retail Branch",
+   "reqd": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Warehouse",
+   "options": "Retail Warehouse",
+   "reqd": 1
+  },
+  {
+   "default": "Today",
+   "fieldname": "session_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Business Date",
+   "reqd": 1
+  },
+  {
+   "default": "Open",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "no_copy": 1,
+   "options": "Open\nClosed\nCancelled",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "opening_float",
+   "fieldtype": "Currency",
+   "label": "Opening Cash Float",
+   "description": "Cash in the drawer at the start of the day"
+  },
+  {
+   "fieldname": "column_break_times",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "opened_by",
+   "fieldtype": "Link",
+   "label": "Opened By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "opened_at",
+   "fieldtype": "Datetime",
+   "label": "Opened At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "closed_by",
+   "fieldtype": "Link",
+   "label": "Closed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "closed_at",
+   "fieldtype": "Datetime",
+   "label": "Closed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_totals",
+   "fieldtype": "Section Break",
+   "label": "Day Totals",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "invoice_count",
+   "fieldtype": "Int",
+   "label": "Bills",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_total",
+   "fieldtype": "Currency",
+   "label": "Sales Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cash_sales",
+   "fieldtype": "Currency",
+   "label": "Cash Collected",
+   "read_only": 1
+  },
+  {
+   "fieldname": "card_sales",
+   "fieldtype": "Currency",
+   "label": "Card Collected",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upi_sales",
+   "fieldtype": "Currency",
+   "label": "UPI / Wallet Collected",
+   "read_only": 1
+  },
+  {
+   "fieldname": "credit_sales",
+   "fieldtype": "Currency",
+   "label": "Credit (Unpaid)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_totals",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "tax_total",
+   "fieldtype": "Currency",
+   "label": "Tax",
+   "read_only": 1
+  },
+  {
+   "fieldname": "discount_total",
+   "fieldtype": "Currency",
+   "label": "Discount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "change_total",
+   "fieldtype": "Currency",
+   "label": "Change Returned",
+   "read_only": 1
+  },
+  {
+   "fieldname": "closing_cash",
+   "fieldtype": "Currency",
+   "label": "Closing Cash Counted"
+  },
+  {
+   "fieldname": "expected_cash",
+   "fieldtype": "Currency",
+   "label": "Expected Cash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "variance",
+   "fieldtype": "Currency",
+   "label": "Cash Variance",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_notes",
+   "fieldtype": "Section Break",
+   "label": "Notes"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Closing Notes"
+  },
+  {
+   "fieldname": "offline_uuid",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Offline UUID",
+   "no_copy": 1,
+   "read_only": 1,
+   "unique": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-01-01 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Retail Ops",
+ "name": "Retail Day Session",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Retail Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Retail Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Retail Cashier",
+   "write": 1
+  }
+ ],
+ "search_fields": "branch,warehouse,status",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

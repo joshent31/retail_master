@@ -1,0 +1,174 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "allow_rename": 1,
+ "autoname": "field:branch_code",
+ "creation": "2026-01-01 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "branch_code",
+  "branch_name",
+  "is_active",
+  "column_break_main",
+  "currency",
+  "phone",
+  "email",
+  "section_address",
+  "address_line",
+  "city",
+  "pincode",
+  "section_pos_settings",
+  "allow_offline_billing",
+  "allow_negative_stock",
+  "allow_price_override",
+  "allow_post_close_billing",
+  "receipt_footer"
+ ],
+ "fields": [
+  {
+   "fieldname": "branch_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Branch Code",
+   "reqd": 1,
+   "unique": 1,
+   "description": "Short code used on receipts, e.g. BR-001"
+  },
+  {
+   "fieldname": "branch_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Branch Name",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Active"
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Data",
+   "label": "Currency",
+   "description": "Leave blank to use the System Settings currency"
+  },
+  {
+   "fieldname": "phone",
+   "fieldtype": "Data",
+   "label": "Phone"
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "label": "Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "section_address",
+   "fieldtype": "Section Break",
+   "label": "Address"
+  },
+  {
+   "fieldname": "address_line",
+   "fieldtype": "Small Text",
+   "label": "Address"
+  },
+  {
+   "fieldname": "city",
+   "fieldtype": "Data",
+   "label": "City"
+  },
+  {
+   "fieldname": "pincode",
+   "fieldtype": "Data",
+   "label": "Pincode"
+  },
+  {
+   "fieldname": "section_pos_settings",
+   "fieldtype": "Section Break",
+   "label": "POS Settings"
+  },
+  {
+   "default": "1",
+   "fieldname": "allow_offline_billing",
+   "fieldtype": "Check",
+   "label": "Allow Offline Billing",
+   "description": "Bills created while the terminal has no network are queued and synced automatically"
+  },
+  {
+   "default": "1",
+   "fieldname": "allow_negative_stock",
+   "fieldtype": "Check",
+   "label": "Allow Negative Stock"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_price_override",
+   "fieldtype": "Check",
+   "label": "Allow Price Override at POS"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_post_close_billing",
+   "fieldtype": "Check",
+   "label": "Allow Billing After Day Close",
+   "description": "Only affects online terminals; invoices queued offline are always accepted for their own open day"
+  },
+  {
+   "fieldname": "receipt_footer",
+   "fieldtype": "Small Text",
+   "label": "Receipt Footer"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-01-01 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Retail Ops",
+ "name": "Retail Branch",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Retail Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Retail Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "role": "Retail Cashier"
+  }
+ ],
+ "search_fields": "branch_name,branch_code",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "branch_name",
+ "track_changes": 1
+}
