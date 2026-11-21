@@ -8,6 +8,7 @@ from retail_ops.permissions import get_my_branches
 from retail_ops.sessions import get_open_session, session_snapshot
 from retail_ops.stock import get_stock_map
 from retail_ops.utils import get_branch, is_retail_admin, server_time
+from retail_ops.whatsapp import get_status as get_whatsapp_status
 
 PRODUCT_FIELDS = [
 	"name",
@@ -114,6 +115,7 @@ def get_bootstrap():
 			"full_name": get_fullname(frappe.session.user),
 			"roles": [role for role in roles if role.startswith("Retail ") or role == "System Manager"],
 			"is_admin": is_retail_admin(),
+			"whatsapp": get_whatsapp_status(),
 			"can": {
 				"create_invoice": bool(frappe.has_permission("Retail Invoice", "create")),
 				"submit_invoice": bool(frappe.has_permission("Retail Invoice", "submit")),

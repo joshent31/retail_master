@@ -32,7 +32,14 @@
   "section_extra",
   "remarks",
   "offline_uuid",
-  "amended_from"
+  "amended_from",
+  "section_whatsapp",
+  "whatsapp_status",
+  "whatsapp_sent_at",
+  "column_break_whatsapp",
+  "whatsapp_number",
+  "whatsapp_error",
+  "whatsapp_message_id"
  ],
  "fields": [
   {
@@ -217,6 +224,55 @@
    "no_copy": 1,
    "options": "Retail Invoice",
    "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_whatsapp",
+   "fieldtype": "Section Break",
+   "label": "WhatsApp"
+  },
+  {
+   "fieldname": "whatsapp_status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "WhatsApp Status",
+   "no_copy": 1,
+   "options": "\nSent\nFailed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "whatsapp_sent_at",
+   "fieldtype": "Datetime",
+   "label": "WhatsApp Sent At",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_whatsapp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "whatsapp_number",
+   "fieldtype": "Data",
+   "label": "WhatsApp Number",
+   "no_copy": 1,
+   "options": "Phone",
+   "read_only": 1
+  },
+  {
+   "fieldname": "whatsapp_error",
+   "fieldtype": "Small Text",
+   "label": "WhatsApp Error",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "whatsapp_message_id",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "WhatsApp Message ID",
+   "no_copy": 1,
    "read_only": 1
   }
  ],

@@ -1307,6 +1307,13 @@
 			badge = 'class="rp-badge is-error">Sync failed';
 		}
 
+		var canWhatsapp = !!(
+			result &&
+			result.invoice &&
+			state.catalog &&
+			state.catalog.whatsapp &&
+			state.catalog.whatsapp.enabled
+		);
 		var body =
 			'<p><span ' + badge + "</span></p>" +
 			'<div class="rp-receipt">' +
@@ -1315,6 +1322,7 @@
 			(status === "error" ? '<p class="rp-muted">' + esc(result.error || "") + "</p>" : "") +
 			'<div class="rp-modal-actions" style="justify-content:flex-start;margin-top:10px">' +
 			'<button class="rp-btn" id="rp-receipt-print">Print</button>' +
+			(canWhatsapp ? '<button class="rp-btn" id="rp-receipt-whatsapp">WhatsApp bill</button>' : "") +
 			"</div>";
 
 		openModal({
@@ -1330,6 +1338,45 @@
 				printReceipt(renderReceiptText(receipt));
 			});
 		}
+
+		var whatsappButton = document.getElementById("rp-receipt-whatsapp");
+		if (whatsappButton) {
+			whatsappButton.addEventListener("click", function () {
+				sendBillOnWhatsApp(result.invoice, whatsappButton);
+			});
+		}
+	}
+
+	function sendBillOnWhatsApp(invoice, button) {
+		if (!navigator.onLine) {
+			toast("Connect to the internet to send on WhatsApp", "error");
+			return;
+		}
+
+		var label = button.textContent;
+		button.disabled = true;
+		button.textContent = "Sending…";
+
+		RetailSync.api("whatsapp.send_invoice", { invoice: invoice })
+			.then(function (outcome) {
+				if (outcome && outcome.status === "failed") {
+					toast(outcome.error || "Could not send on WhatsApp", "error");
+				} else if (outcome && outcome.status === "already_sent") {
+					toast("Bill was already sent on WhatsApp", "success");
+				} else {
+					toast(
+						"Bill sent on WhatsApp" + (outcome && outcome.phone ? " to " + outcome.phone : ""),
+						"success"
+					);
+				}
+			})
+			.catch(function (error) {
+				toast((error && error.message) || "Could not send on WhatsApp", "error");
+			})
+			.then(function () {
+				button.disabled = false;
+				button.textContent = label;
+			});
 	}
 
 	function renderReceiptText(receipt) {

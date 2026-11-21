@@ -1,0 +1,148 @@
+{
+ "actions": [],
+ "creation": "2026-01-01 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "auto_send",
+  "column_break_main",
+  "default_country_code",
+  "section_connection",
+  "phone_number_id",
+  "access_token",
+  "api_version",
+  "section_template",
+  "template_name",
+  "template_language",
+  "body_parameters",
+  "section_help",
+  "setup_help"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enable WhatsApp"
+  },
+  {
+   "default": "0",
+   "depends_on": "enabled",
+   "description": "Send the bill automatically when an invoice is submitted. Bills without a customer mobile number are skipped.",
+   "fieldname": "auto_send",
+   "fieldtype": "Check",
+   "label": "Send Bill Automatically on Submit"
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "91",
+   "depends_on": "enabled",
+   "description": "Prefixed to local numbers that do not already include a country code.",
+   "fieldname": "default_country_code",
+   "fieldtype": "Data",
+   "label": "Default Country Code"
+  },
+  {
+   "fieldname": "section_connection",
+   "fieldtype": "Section Break",
+   "label": "WhatsApp Cloud API",
+   "depends_on": "enabled"
+  },
+  {
+   "description": "WhatsApp Business Phone Number ID from Meta App Dashboard > WhatsApp > API Setup.",
+   "fieldname": "phone_number_id",
+   "fieldtype": "Data",
+   "label": "Phone Number ID",
+   "mandatory_depends_on": "enabled"
+  },
+  {
+   "description": "Permanent system user access token with whatsapp_business_messaging permission.",
+   "fieldname": "access_token",
+   "fieldtype": "Password",
+   "label": "Access Token",
+   "mandatory_depends_on": "enabled"
+  },
+  {
+   "default": "v23.0",
+   "fieldname": "api_version",
+   "fieldtype": "Data",
+   "label": "Graph API Version"
+  },
+  {
+   "fieldname": "section_template",
+   "fieldtype": "Section Break",
+   "label": "Message Template",
+   "depends_on": "enabled"
+  },
+  {
+   "description": "Approved UTILITY template with a DOCUMENT header. Leave empty to send a plain document message, which WhatsApp only allows inside the 24 hour customer service window.",
+   "fieldname": "template_name",
+   "fieldtype": "Data",
+   "label": "Template Name"
+  },
+  {
+   "default": "en",
+   "depends_on": "eval:doc.template_name",
+   "fieldname": "template_language",
+   "fieldtype": "Data",
+   "label": "Template Language"
+  },
+  {
+   "default": "customer_name,invoice_no,grand_total",
+   "depends_on": "eval:doc.template_name",
+   "description": "Comma separated, in template placeholder order. Allowed: customer_name, invoice_no, grand_total, outstanding, branch, date.",
+   "fieldname": "body_parameters",
+   "fieldtype": "Data",
+   "label": "Body Parameters"
+  },
+  {
+   "fieldname": "section_help",
+   "fieldtype": "Section Break",
+   "label": "Setup"
+  },
+  {
+   "fieldname": "setup_help",
+   "fieldtype": "HTML",
+   "options": "<ol><li>In Meta Business Suite create a WhatsApp Business Account and add the store's phone number.</li><li>Create a <b>Utility</b> template with a <b>Document</b> header and a body such as <i>Hello {{1}}, your bill {{2}} for {{3}} is attached.</i> Wait for approval.</li><li>Create a permanent system user token with <code>whatsapp_business_messaging</code> and paste the token and the phone number ID here.</li><li>Enable, save, then use <b>WhatsApp bill</b> on the POS receipt or tick auto-send.</li></ol><p class=\"text-muted small\">Every bill is sent as a PDF attachment. Customers must have given consent to receive WhatsApp messages; keep the number in <code>customer_mobile</code> with country code.</p>"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-01-01 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Retail Ops",
+ "name": "Retail WhatsApp Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Retail Admin",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

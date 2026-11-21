@@ -19,6 +19,7 @@ from retail_ops.utils import (
 	get_warehouse,
 	money,
 )
+from retail_ops.whatsapp import maybe_send_after_submit
 
 PAYMENT_MODES = ("Cash", "Card", "UPI", "Credit")
 
@@ -185,6 +186,7 @@ def on_invoice_submit(doc, method=None):
 
 	doc.db_set("status", doc.status, update_modified=False)
 	update_session_totals(doc.day_session)
+	maybe_send_after_submit(doc)
 
 
 def on_invoice_cancel(doc, method=None):

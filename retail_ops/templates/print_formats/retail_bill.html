@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ doc.name }}</title>
+<style>
+	* { box-sizing: border-box; }
+	body {
+		font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+		font-size: 10.5px;
+		color: #1f2933;
+		margin: 0;
+	}
+	.head { border-bottom: 2px solid #1f2933; padding-bottom: 6px; margin-bottom: 8px; }
+	.shop { font-size: 15px; font-weight: 700; letter-spacing: 0.4px; }
+	.muted { color: #616e7c; }
+	.row { width: 100%; }
+	.row td { vertical-align: top; padding: 0; }
+	.row .right { text-align: right; }
+	table.items { width: 100%; border-collapse: collapse; margin: 10px 0 6px; }
+	table.items th {
+		text-align: left;
+		font-size: 9px;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		color: #616e7c;
+		border-bottom: 1px solid #cbd2d9;
+		padding: 3px 2px;
+	}
+	table.items td { padding: 4px 2px; border-bottom: 1px solid #eef2f6; }
+	table.items .num { text-align: right; white-space: nowrap; }
+	.totals { width: 100%; border-collapse: collapse; margin-top: 4px; }
+	.totals td { padding: 2px 0; }
+	.totals .label { text-align: right; padding-right: 10px; color: #616e7c; }
+	.totals .value { text-align: right; white-space: nowrap; }
+	.totals .grand td { border-top: 1px solid #1f2933; padding-top: 5px; font-size: 12px; font-weight: 700; color: #1f2933; }
+	.payments { margin-top: 8px; }
+	.footer { margin-top: 14px; border-top: 1px dashed #cbd2d9; padding-top: 6px; font-size: 9px; color: #616e7c; text-align: center; }
+</style>
+</head>
+<body>
+	<div class="head">
+		<table class="row">
+			<tr>
+				<td>
+					<div class="shop">{{ branch.branch_name or doc.branch }}</div>
+					<div class="muted">
+						{% if branch.address_line %}{{ branch.address_line }}<br>{% endif %}
+						{% if branch.city %}{{ branch.city }}{% if branch.pincode %} - {{ branch.pincode }}{% endif %}<br>{% endif %}
+						{% if branch.phone %}{{ branch.phone }}{% endif %}
+					</div>
+				</td>
+				<td class="right">
+					<div class="shop">BILL</div>
+					<div>{{ doc.name }}</div>
+					<div class="muted">{{ doc.posting_datetime }}</div>
+					{% if doc.customer_name %}<div class="muted">{{ doc.customer_name }}</div>{% endif %}
+					{% if doc.customer_mobile %}<div class="muted">{{ doc.customer_mobile }}</div>{% endif %}
+				</td>
+			</tr>
+		</table>
+	</div>
+
+	<table class="items">
+		<thead>
+			<tr>
+				<th>Item</th>
+				<th class="num">Qty</th>
+				<th class="num">Rate</th>
+				<th class="num">Amount</th>
+			</tr>
+		</thead>
+		<tbody>
+			{% for row in doc.items %}
+			<tr>
+				<td>
+					{{ row.item_name or row.item_code }}
+					{% if row.discount_amount %}<div class="muted">Discount {{ money(row.discount_amount) }}</div>{% endif %}
+					{% if row.tax_rate %}<div class="muted">Tax {{ row.tax_rate }}%</div>{% endif %}
+				</td>
+				<td class="num">{{ row.qty }} {{ row.uom or "" }}</td>
+				<td class="num">{{ money(row.rate) }}</td>
+				<td class="num">{{ money(row.total_amount) }}</td>
+			</tr>
+			{% endfor %}
+		</tbody>
+	</table>
+
+	<table class="totals">
+		<tr>
+			<td class="label">Subtotal</td>
+			<td class="value">{{ money(doc.net_total) }}</td>
+		</tr>
+		{% if doc.discount_total %}
+		<tr>
+			<td class="label">Discount</td>
+			<td class="value">-{{ money(doc.discount_total) }}</td>
+		</tr>
+		{% endif %}
+		{% if doc.tax_total %}
+		<tr>
+			<td class="label">Tax</td>
+			<td class="value">{{ money(doc.tax_total) }}</td>
+		</tr>
+		{% endif %}
+		<tr class="grand">
+			<td class="label">Total</td>
+			<td class="value">{{ money(doc.grand_total) }} {{ currency or "" }}</td>
+		</tr>
+		{% if doc.paid_amount %}
+		<tr>
+			<td class="label">Paid</td>
+			<td class="value">{{ money(doc.paid_amount) }}</td>
+		</tr>
+		{% endif %}
+		{% if doc.change_amount %}
+		<tr>
+			<td class="label">Change</td>
+			<td class="value">{{ money(doc.change_amount) }}</td>
+		</tr>
+		{% endif %}
+		{% if doc.outstanding_amount %}
+		<tr>
+			<td class="label">Outstanding</td>
+			<td class="value">{{ money(doc.outstanding_amount) }}</td>
+		</tr>
+		{% endif %}
+	</table>
+
+	<div class="payments">
+		{% for row in doc.payments %}
+		<div class="muted">{{ row.mode }}: {{ money(row.amount) }}{% if row.reference_no %} ({{ row.reference_no }}){% endif %}</div>
+		{% endfor %}
+	</div>
+
+	<div class="footer">
+		{% if branch.receipt_footer %}{{ branch.receipt_footer }}<br>{% endif %}
+		{{ doc.name }} &middot; {{ printed_on }}
+	</div>
+</body>
+</html>
