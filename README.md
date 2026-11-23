@@ -234,6 +234,12 @@ the service worker serves the same shell offline. Installation needs HTTPS
 (or `localhost`); the manifest lives at `/assets/retail_ops/manifest.json` and
 the icons at `/assets/retail_ops/images/`.
 
+**Queue at a glance.** The header always shows how many bills are still
+waiting to reach the server (`2 queued`) and when the queue last synced
+(`Last sync 4m ago`), refreshed every 30 seconds and remembered across reloads
+so a cashier can tell whether it is safe to close the tab. The badges sit in
+the header on every tab, so they stay visible while billing on a phone.
+
 **Camera scanning.** The **Scan** button next to the search box opens the rear
 camera and adds the product whose barcode it reads (EAN-13/8, UPC-A/E,
 Code-128/39, ITF, Codabar, QR). It uses the browser's `BarcodeDetector`, so it

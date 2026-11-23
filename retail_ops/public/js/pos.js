@@ -145,6 +145,7 @@
 			"rp-close-day",
 			"rp-sync",
 			"rp-queue",
+			"rp-sync-time",
 			"rp-user",
 			"rp-store-label",
 			"rp-offline-warning",
@@ -354,6 +355,10 @@
 		bindEvents();
 		setTab(state.tab);
 		setupInstall();
+		// keep "3m ago" honest even when nothing else changes
+		global.setInterval(function () {
+			renderSync(RetailSync.getState ? RetailSync.getState() : {});
+		}, 30000);
 		registerServiceWorker();
 
 		RetailSync.onState(function (syncState) {
@@ -695,6 +700,22 @@
 		}
 	}
 
+	function timeAgo(timestamp) {
+		var seconds = Math.round((Date.now() - timestamp) / 1000);
+		if (seconds < 45) {
+			return "just now";
+		}
+		var minutes = Math.round(seconds / 60);
+		if (minutes < 60) {
+			return minutes + "m ago";
+		}
+		var hours = Math.round(minutes / 60);
+		if (hours < 24) {
+			return hours + "h ago";
+		}
+		return Math.round(hours / 24) + "d ago";
+	}
+
 	function renderSync(syncState) {
 		syncState = syncState || {};
 		var pill = dom["rp-net-pill"];
@@ -716,6 +737,22 @@
 
 		dom["rp-queue"].hidden = !pending;
 		dom["rp-queue"].textContent = pending + " queued";
+
+		// how much is waiting, and when it last reached the server
+		var lastSync = syncState.lastSync || 0;
+		var when = lastSync ? timeAgo(lastSync) : "not yet";
+		if (syncState.syncing) {
+			dom["rp-sync-time"].textContent = "Syncing…";
+		} else if (pending) {
+			dom["rp-sync-time"].textContent = "Last sync " + when;
+		} else {
+			dom["rp-sync-time"].textContent = "Synced " + when;
+		}
+		dom["rp-sync-time"].title = lastSync
+			? "Last successful sync " + new Date(lastSync).toLocaleString()
+			: "No successful sync on this device yet";
+		dom["rp-sync-time"].className =
+			"rp-sync-time" + (pending && !syncState.syncing ? " is-pending" : "");
 		dom["rp-sync"].disabled = !!syncState.syncing;
 		dom["rp-offline-warning"].hidden = !!navigator.onLine;
 

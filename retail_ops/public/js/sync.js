@@ -10,15 +10,38 @@
 
 	var API_ROOT = "/api/method/retail_ops.api.";
 	var POLL_MS = 20000;
+	var LAST_SYNC_KEY = "retail_ops.last_sync";
 	var listeners = new Set();
 	var timer = null;
 	var state = {
 		online: typeof navigator === "undefined" ? true : navigator.onLine,
 		syncing: false,
 		pending: 0,
-		lastSync: null,
+		lastSync: readLastSync(),
 		lastError: null,
 	};
+
+	/* Kept in localStorage so a reload or a re-opened tab can still tell the
+	 * cashier when the queue last reached the server. */
+	function readLastSync() {
+		try {
+			var stored = global.localStorage.getItem(LAST_SYNC_KEY);
+			var value = parseInt(stored, 10);
+			return isNaN(value) ? null : value;
+		} catch (error) {
+			return null;
+		}
+	}
+
+	function markSynced() {
+		state.lastSync = Date.now();
+		try {
+			global.localStorage.setItem(LAST_SYNC_KEY, String(state.lastSync));
+		} catch (error) {
+			/* storage blocked: the header keeps the in-memory value */
+		}
+		emit();
+	}
 
 	function emit() {
 		var snapshot = Object.assign({}, state);
@@ -160,7 +183,7 @@
 					});
 
 					return Promise.all(updates).then(function () {
-						state.lastSync = Date.now();
+						markSynced();
 						return refreshPending().then(function () {
 							return pullCatalog()
 								.catch(function (error) {
@@ -237,6 +260,7 @@
 	function refreshCatalog() {
 		return api("bootstrap.get_bootstrap", {}).then(function (catalog) {
 			return global.RetailDB.saveCatalog(catalog).then(function () {
+				markSynced();
 				broadcast("retail:catalog", { catalog: catalog });
 				return catalog;
 			});

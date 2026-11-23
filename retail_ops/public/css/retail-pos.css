@@ -156,6 +156,18 @@ button.rp-pill {
 	font-weight: 700;
 }
 
+.rp-sync-time {
+	font-size: 11px;
+	color: var(--rp-muted);
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+.rp-sync-time.is-pending {
+	color: var(--rp-warn);
+	font-weight: 600;
+}
+
 .rp-user {
 	font-size: 12px;
 	color: var(--rp-muted);
@@ -743,6 +755,10 @@ button.rp-pill.rp-install {
 	.rp-status .rp-pill {
 		padding: 4px 8px;
 		font-size: 11px;
+	}
+
+	.rp-sync-time {
+		font-size: 10px;
 	}
 
 	.rp-user {
