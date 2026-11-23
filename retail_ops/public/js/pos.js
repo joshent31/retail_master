@@ -22,6 +22,7 @@
 		customer: { name: "", mobile: "" },
 		query: "",
 		category: "",
+		tab: "products",
 		tenderedTouched: false,
 		syncing: false,
 		online: navigator.onLine,
@@ -131,6 +132,10 @@
 	/* -------------------------------------------------------------------- boot */
 	function cacheDom() {
 		[
+			"rp-app",
+			"rp-tabbar",
+			"rp-tab-count",
+			"rp-tab-total",
 			"rp-branch",
 			"rp-warehouse",
 			"rp-day-pill",
@@ -267,6 +272,16 @@
 		dom["rp-tendered"].addEventListener("input", function () {
 			state.tenderedTouched = true;
 		});
+		dom["rp-day-pill"].addEventListener("click", function () {
+			// on a phone this is the quickest way to reach Open / Close day
+			setTab("menu");
+		});
+		dom["rp-tabbar"].addEventListener("click", function (event) {
+			var button = event.target.closest("[data-tab]");
+			if (button) {
+				setTab(button.getAttribute("data-tab"));
+			}
+		});
 		dom["rp-checkout"].addEventListener("click", checkout);
 		dom["rp-modal-cancel"].addEventListener("click", closeModal);
 		document.querySelector(".rp-modal-backdrop").addEventListener("click", closeModal);
@@ -322,6 +337,7 @@
 	function boot() {
 		cacheDom();
 		bindEvents();
+		setTab(state.tab);
 		registerServiceWorker();
 
 		RetailSync.onState(function (syncState) {
@@ -572,6 +588,24 @@
 		}
 		var value = state.stock.get(product + "::" + warehouse);
 		return value === undefined ? 0 : value;
+	}
+
+	/* -------------------------------------------------------------------- tabs */
+	/* The tab bar only exists on phones; on wider screens the CSS ignores the
+	 * classes and shows the catalog and bill side by side. */
+	function setTab(tab) {
+		if (["products", "cart", "menu"].indexOf(tab) === -1) {
+			tab = "products";
+		}
+		state.tab = tab;
+		["products", "cart", "menu"].forEach(function (name) {
+			dom["rp-app"].classList.toggle("is-tab-" + name, name === tab);
+		});
+		Array.prototype.forEach.call(dom["rp-tabbar"].querySelectorAll("[data-tab]"), function (button) {
+			var active = button.getAttribute("data-tab") === tab;
+			button.classList.toggle("is-active", active);
+			button.setAttribute("aria-selected", active ? "true" : "false");
+		});
 	}
 
 	/* ------------------------------------------------------------------ render */
@@ -841,6 +875,10 @@
 			dom["rp-tendered"].value = summary.grand ? summary.grand.toFixed(2) : "";
 		}
 		dom["rp-checkout"].disabled = !state.cart.length || (state.can.create_invoice === false);
+
+		dom["rp-tab-count"].hidden = !summary.count;
+		dom["rp-tab-count"].textContent = summary.count;
+		dom["rp-tab-total"].textContent = summary.grand ? money(summary.grand) : "";
 	}
 
 	/* -------------------------------------------------------------- cart logic */
@@ -947,6 +985,10 @@
 
 	function closeModal() {
 		dom["rp-modal"].hidden = true;
+		if (!state.cart.length && state.tab === "cart") {
+			// back to the catalog after a bill, the way a phone user expects
+			setTab("products");
+		}
 		if (modalResolve) {
 			var resolve = modalResolve;
 			modalResolve = null;
@@ -1047,6 +1089,7 @@
 		state.session = localSession;
 		persistSession();
 		renderHeader();
+		setTab("products");
 		dom["rp-day-hint"].textContent = "Opening day…";
 
 		RetailDB.enqueue({

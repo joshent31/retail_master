@@ -15,6 +15,12 @@
 			</div>
 		</div>
 
+		<div class="rp-status">
+			<button class="rp-pill" id="rp-day-pill" type="button" title="Day and sync settings">Day closed</button>
+			<span class="rp-pill" id="rp-net-pill">Checking…</span>
+			<span class="rp-queue" id="rp-queue" hidden></span>
+		</div>
+
 		<div class="rp-controls">
 			<label class="rp-field">
 				<span>Branch</span>
@@ -24,12 +30,9 @@
 				<span>Warehouse</span>
 				<select id="rp-warehouse"></select>
 			</label>
-			<span class="rp-pill" id="rp-day-pill">Day closed</span>
-			<span class="rp-pill" id="rp-net-pill">Checking…</span>
 			<button class="rp-btn rp-btn-ghost" id="rp-open-day" hidden>Open Day</button>
 			<button class="rp-btn rp-btn-ghost" id="rp-close-day" hidden>Close Day</button>
 			<button class="rp-btn rp-btn-ghost" id="rp-sync" title="Push queued bills and refresh catalog">Sync</button>
-			<span class="rp-queue" id="rp-queue" hidden></span>
 			<span class="rp-user" id="rp-user">{{ full_name }}</span>
 		</div>
 	</header>
@@ -88,13 +91,26 @@
 			<div class="rp-hint" id="rp-day-hint"></div>
 		</aside>
 	</main>
+
+	<nav class="rp-tabbar" id="rp-tabbar" aria-label="Billing sections">
+		<button class="rp-tab" type="button" data-tab="products" aria-selected="true">
+			<span>Products</span>
+		</button>
+		<button class="rp-tab" type="button" data-tab="cart" aria-selected="false">
+			<span>Bill <span class="rp-tab-count" id="rp-tab-count" hidden>0</span></span>
+			<span class="rp-tab-total" id="rp-tab-total"></span>
+		</button>
+		<button class="rp-tab" type="button" data-tab="menu" aria-selected="false">
+			<span>Day &amp; sync</span>
+		</button>
+	</nav>
 </div>
 
 <div class="rp-modal-root" id="rp-modal" hidden>
 	<div class="rp-modal-backdrop"></div>
 	<div class="rp-modal">
 		<h3 id="rp-modal-title"></h3>
-		<div id="rp-modal-body"></div>
+		<div class="rp-modal-body" id="rp-modal-body"></div>
 		<div class="rp-modal-actions">
 			<button class="rp-btn" id="rp-modal-cancel">Cancel</button>
 			<button class="rp-btn rp-btn-primary" id="rp-modal-ok">Confirm</button>

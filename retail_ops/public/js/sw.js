@@ -7,7 +7,9 @@
  * Served from /assets/retail_ops/js/sw.js with `Service-Worker-Allowed: /`
  * (set in retail_ops/retail_ops/utils.py) so it can control /retail-pos.
  */
-var CACHE_NAME = "retail-ops-v1";
+// bump the version whenever the POS shell changes, so installed terminals
+// replace the cached CSS/JS on their next visit
+var CACHE_NAME = "retail-ops-v2";
 var SHELL = [
 	"/retail-pos",
 	"/assets/retail_ops/css/retail-pos.css",

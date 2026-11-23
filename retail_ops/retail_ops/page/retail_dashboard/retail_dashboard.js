@@ -141,7 +141,7 @@ frappe.pages["retail-dashboard"].on_page_load = function (wrapper) {
 
 			new frappe.Chart($canvas.get(0), {
 				type: spec.type || "bar",
-				height: definition.height,
+				height: chart_height(definition.height),
 				data: {
 					labels: spec.labels,
 					datasets: spec.datasets,
@@ -150,6 +150,10 @@ frappe.pages["retail-dashboard"].on_page_load = function (wrapper) {
 				axisOptions: { xIsSeries: !!spec.x_is_series },
 			});
 		});
+	}
+
+	function chart_height(height) {
+		return window.innerWidth < 600 ? Math.round(height * 0.7) : height;
 	}
 
 	function money(value) {

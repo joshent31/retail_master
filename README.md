@@ -20,6 +20,7 @@ DocTypes, so it installs on a plain Frappe v16 bench.
 - [First-time setup](#first-time-setup)
 - [Permissions](#permissions)
 - [Using the POS](#using-the-pos)
+- [Using the POS on a phone](#using-the-pos-on-a-phone)
 - [Reports](#reports)
 - [Dashboard](#dashboard)
 - [Offline mode and sync](#offline-mode-and-sync)
@@ -204,6 +205,26 @@ Branch caches are cleared automatically when a User Permission changes.
 5. **Close Day** — enter the cash counted in the drawer. The app shows sales,
    cash/card/UPI/credit split, expected cash and the variance, then opens a
    summary once the server has the close.
+
+## Using the POS on a phone
+
+The same page (`/retail-pos`) is the mobile billing screen — no separate app.
+Below 820px the layout switches to one screen at a time with a tab bar at the
+bottom:
+
+- **Products** — search/scan and tap to add, two products per row with stock
+  and rate visible.
+- **Bill** — line editing, customer details, totals, payment mode and
+  **Charge**, all on one panel. The tab shows the item count and the running
+  total, so the cashier can see the bill from the catalog screen.
+- **Day & sync** — branch and warehouse selectors, **Open Day** / **Close
+  Day** and **Sync**. Tapping the day pill in the header jumps here too.
+
+Receipts, day summaries and the open/close forms open full screen, the tab bar
+respects the phone's safe area, and a finished bill returns to the catalog for
+the next customer. The layout works offline the same way the desktop one does.
+The Desk dashboard also drops to a single column with two cards per row on a
+phone; reports use the standard Desk list, which is already responsive.
 
 ## Reports
 
