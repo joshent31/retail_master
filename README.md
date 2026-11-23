@@ -20,6 +20,7 @@ DocTypes, so it installs on a plain Frappe v16 bench.
 - [First-time setup](#first-time-setup)
 - [Permissions](#permissions)
 - [Using the POS](#using-the-pos)
+- [Reports](#reports)
 - [Offline mode and sync](#offline-mode-and-sync)
 - [DocTypes](#doctypes)
 - [API](#api)
@@ -199,6 +200,26 @@ Branch caches are cleared automatically when a User Permission changes.
 5. **Close Day** — enter the cash counted in the drawer. The app shows sales,
    cash/card/UPI/credit split, expected cash and the variance, then opens a
    summary once the server has the close.
+
+## Reports
+
+Desk → **Reports** (or the Awesome Bar by name). All reports are branch-aware:
+users with branch User Permissions only see their own branches, and a branch
+filter outside their access is refused.
+
+| Report | Answers | Filters |
+|---|---|---|
+| **Retail Sales Summary** | Daily sales per branch: bills, net, discount, tax, billed, and the cash/card/UPI/credit split | From/To date, Branch, Warehouse |
+| **Retail Item Sales** | Which products sell, how much and their share of sales | From/To date, Branch, Category |
+| **Retail Tax Summary** | Tax collected per tax rate, for filing | From/To date, Branch |
+| **Retail Stock On Hand** | Quantity and value of stock per product and warehouse | Branch, Warehouse, Category, Only In-Stock |
+| **Retail Shift Reconciliation** | Closing cash vs expected cash for every day session, with variance | From/To date, Branch, Status, Only Cash Differences |
+| **Retail Credit Outstanding** | Customers who still owe money, oldest dues first | As On date, Branch, Older Than (days) |
+
+Reports are script reports (`retail_ops/retail_ops/report/<name>/`) rather than
+Query Reports, so they can honour branch permissions and compute columns such
+as product share and dues age in Python. **Retail Cashier** can run Sales
+Summary and Shift Reconciliation; the other reports are Admin/Manager only.
 
 ## Offline mode and sync
 

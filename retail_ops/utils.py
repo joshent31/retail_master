@@ -85,6 +85,24 @@ def has_branch_access(branch, user=None):
 	return branches is None or branch in branches
 
 
+def report_branch_filter(filters):
+	"""Branch names a report query must be limited to.
+
+	Returns ``None`` when the user may see every branch, or the list of
+	allowed branches (possibly empty) otherwise.
+	"""
+	branch = (filters or {}).get("branch")
+	branches = user_branches()
+	if branch:
+		if branches is not None and branch not in branches:
+			frappe.throw(
+				_("You do not have access to branch {0}").format(frappe.bold(branch)),
+				frappe.PermissionError,
+			)
+		return [branch]
+	return branches
+
+
 def accessible_branch_names(user=None):
 	branches = user_branches(user)
 	if branches is not None:
