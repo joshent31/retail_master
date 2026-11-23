@@ -6,6 +6,8 @@
   idempotency key, so retried syncs never double-book a sale or its stock.
 """
 
+import re
+
 import frappe
 from frappe import _
 from frappe.utils import add_days, cint, flt, get_datetime, getdate, now
@@ -23,6 +25,9 @@ from retail_ops.whatsapp import maybe_send_after_submit
 
 PAYMENT_MODES = ("Cash", "Card", "UPI", "Credit")
 
+# 2 digits state code + PAN + entity + Z + checksum
+GSTIN_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$")
+
 # Returns are stored as a normal bill with negative quantities, so every
 # report that sums qty/amount nets them out without special cases.
 
@@ -38,6 +43,13 @@ def validate_invoice(doc, method=None):
 	branch = get_branch(doc.branch)
 	warehouse = get_warehouse(doc.warehouse, branch=doc.branch)
 	doc.customer_gstin = (doc.customer_gstin or "").strip().upper() or None
+	if doc.customer_gstin and not GSTIN_PATTERN.match(doc.customer_gstin):
+		frappe.throw(
+			_("Customer GSTIN {0} does not look like a GST number").format(
+				frappe.bold(doc.customer_gstin)
+			),
+			frappe.ValidationError,
+		)
 	doc.warehouse = warehouse.name
 	doc.posting_datetime = doc.posting_datetime or now()
 	doc.sync_source = doc.sync_source or "Online"
@@ -79,7 +91,17 @@ def validate_return(doc, branch):
 	against = frappe.db.get_value(
 		"Retail Invoice",
 		doc.return_against,
-		["name", "docstatus", "branch", "posting_datetime", "is_return", "customer_name", "customer_mobile", "customer_gstin"],
+		[
+			"name",
+			"docstatus",
+			"branch",
+			"warehouse",
+			"posting_datetime",
+			"is_return",
+			"customer_name",
+			"customer_mobile",
+			"customer_gstin",
+		],
 		as_dict=True,
 	)
 	if not against:
@@ -109,19 +131,27 @@ def validate_return(doc, branch):
 	doc.customer_name = doc.customer_name or against.customer_name
 	doc.customer_mobile = doc.customer_mobile or against.customer_mobile
 	doc.customer_gstin = doc.customer_gstin or against.customer_gstin
+	# stock goes back where it left from, not to the branch default
+	if against.warehouse:
+		doc.warehouse = against.warehouse
 
 	returned = returned_qty(against.name)
 	original = frappe.db.get_all(
 		"Retail Invoice Item",
 		filters={"parent": against.name, "parenttype": "Retail Invoice"},
-		fields=["product", "qty", "rate"],
+		fields=["product", "qty", "rate", "amount", "tax_rate"],
 	)
 	sold = {row.product: flt(row.qty) for row in original}
-	original_rates = {row.product: flt(row.rate) for row in original}
+	original_lines = {row.product: row for row in original}
 	for row in doc.items:
-		# a refund always goes back at the price that was actually charged
-		if row.product in original_rates:
-			row.rate = original_rates[row.product]
+		line = original_lines.get(row.product)
+		if not line:
+			continue
+		# refund what was actually charged: net of the offer/manual discount
+		# taken on the bill, at the tax rate that was charged then
+		if flt(line.qty):
+			row.rate = flt(flt(line.amount) / flt(line.qty), 4)
+		row.tax_rate = flt(line.tax_rate)
 
 	for row in doc.items:
 		if not row.product:
@@ -228,7 +258,17 @@ def validate_item(doc, row, branch):
 	product = frappe.db.get_value(
 		"Retail Product",
 		row.product,
-		["item_code", "product_name", "uom", "rate", "tax_rate", "is_active", "hsn_code", "category"],
+		[
+			"item_code",
+			"product_name",
+			"uom",
+			"rate",
+			"tax_rate",
+			"is_active",
+			"hsn_code",
+			"category",
+			"mrp",
+		],
 		as_dict=True,
 	)
 	if not product:
@@ -247,18 +287,29 @@ def validate_item(doc, row, branch):
 	row.item_code = product.item_code
 	row.item_name = product.product_name
 	row.uom = product.uom
-	row.tax_rate = flt(product.tax_rate)
 	row.hsn_code = product.hsn_code or ""
 
 	if cint(doc.is_return):
-		row.rate = money(row.rate)
-	elif cint(branch.get("allow_price_override")):
-		row.rate = money(row.rate if row.rate is not None else product.rate)
+		# keep the tax rate (and the net rate) that the original bill charged
+		row.tax_rate = flt(row.tax_rate) or flt(product.tax_rate)
+		row.rate = flt(row.rate, 4)
 	else:
-		row.rate = money(product.rate)
+		row.tax_rate = flt(product.tax_rate)
+		if cint(branch.get("allow_price_override")):
+			row.rate = money(row.rate if row.rate is not None else product.rate)
+		else:
+			row.rate = money(product.rate)
 
 	if row.rate < 0:
 		frappe.throw(_("Rate cannot be negative for {0}").format(product.product_name))
+
+	if not cint(doc.is_return) and flt(product.mrp) and row.rate > flt(product.mrp):
+		frappe.throw(
+			_("{0} is priced at {1}, above its MRP of {2}").format(
+				frappe.bold(product.product_name), frappe.bold(row.rate), frappe.bold(product.mrp)
+			),
+			frappe.ValidationError,
+		)
 
 	line_value = money(row.rate * row.qty)
 	if cint(doc.is_return):
@@ -293,6 +344,11 @@ def calculate_totals(doc):
 	if cint(doc.is_return):
 		# a refund leaves the drawer; nothing changes hands back to the customer
 		doc.change_amount = 0
+		if doc.refund_mode == "Credit" and not paid:
+			# store credit settles in full: no cash is owed either way
+			doc.outstanding_amount = 0
+			doc.status = "Paid"
+			return
 		doc.outstanding_amount = money(doc.grand_total - paid)
 		if abs(flt(doc.outstanding_amount)) <= 0.005:
 			doc.status = "Paid"

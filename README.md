@@ -270,10 +270,12 @@ enter quantities, choose the refund mode and confirm.
 - Quantities are checked against the bill minus everything already returned on
   it, so the same item cannot be refunded twice. `Return Within Days` on the
   branch limits how old a bill may be (0 = no limit).
-- Refunds are paid out at the rate actually charged on the original bill, even
-  if the product price has changed since.
+- Refunds are paid at what the customer actually paid — the original line net
+  of any offer or manual discount, at the tax rate charged then — so a
+  discounted sale refunds the discounted amount even if the price changed since.
+  Stock goes back to the warehouse the bill was posted to.
 - Refund modes: Cash, Card, UPI, or **Store credit** (no money leaves the
-till; the negative bill is recorded as a Credit payment).
+  till; the negative bill is recorded as a Credit payment and settles as Paid).
 - Returns need a connection, because the sold quantities live on the server.
   The credit note appears in the day session and reduces expected cash.
 
@@ -294,7 +296,8 @@ till; the negative bill is recorded as a Credit payment).
   shows the offer badge on the product card and the discount in the bill
   without a round trip. The server recalculates the same result on sync.
 - `MRP` on the product is struck through on the card when it is above the
-  selling rate, and the bill shows the discount line the customer saved.
+  selling rate, and the bill shows the discount line the customer saved. Selling
+  a product above its MRP is rejected at billing.
 - Enabling or editing an offer clears the cached offer list; terminals pick it
   up on their next catalog refresh.
 
@@ -304,7 +307,9 @@ Set `GSTIN` and `State Code` on the branch, `HSN/SAC` on products, and the
 customer can type a GSTIN in the bill (optional).
 
 - Without a customer GSTIN the bill is a plain retail bill. With one it is a
-  **Tax Invoice** and the printed/WhatsApp document shows both GSTINs.
+  **Tax Invoice** and the printed/WhatsApp document shows both GSTINs. The
+  GSTIN is format-checked at the till and again on the server, so a typo cannot
+  silently produce an inter-state bill.
 - Tax is split into CGST + SGST when the customer's GSTIN state code matches the
   branch state code, and into IGST when it differs (that code also becomes the
   place of supply). Bills without a customer GSTIN are treated as intra-state.

@@ -825,6 +825,12 @@
 	/* Same rules as retail_ops/offers.py: the best matching offer wins, capped
 	 * at the line value. The server recalculates on sync, so a stale cached
 	 * offer can never change what a bill finally costs. */
+	var GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/;
+
+	function validGstin(value) {
+		return GSTIN_RE.test(String(value || "").trim().toUpperCase());
+	}
+
 	function todayIso() {
 		var nowDate = new Date();
 		var month = String(nowDate.getMonth() + 1);
@@ -1280,18 +1286,33 @@
 	function showReturnReceipt(detail, lines, mode, result) {
 		var net = 0;
 		var tax = 0;
-		var receiptLines = lines.map(function (line) {
-			var taxRate = num(line.item && line.item.tax_rate);
-			var value = round(num(line.rate) * num(line.qty));
-			net += value;
-			tax += round((value * taxRate) / 100);
-			return {
-				item_name: line.item.item_name,
-				qty: -Math.abs(num(line.qty)),
-				rate: num(line.rate),
-				total: -round(value + (value * taxRate) / 100),
-			};
-		});
+		var receiptLines;
+		if (result && result.items && result.items.length) {
+			// the server is the authority on what was refunded
+			receiptLines = result.items.map(function (item) {
+				return {
+					item_name: item.item_name,
+					qty: num(item.qty),
+					rate: num(item.rate),
+					total: num(item.total_amount),
+				};
+			});
+			net = -num(result.net_total);
+			tax = -num(result.tax_total);
+		} else {
+			receiptLines = lines.map(function (line) {
+				var taxRate = num(line.item && line.item.tax_rate);
+				var value = round(num(line.rate) * num(line.qty));
+				net += value;
+				tax += round((value * taxRate) / 100);
+				return {
+					item_name: line.item.item_name,
+					qty: -Math.abs(num(line.qty)),
+					rate: num(line.rate),
+					total: -round(value + (value * taxRate) / 100),
+				};
+			});
+		}
 		var grand = result && result.grand_total !== undefined ? round(result.grand_total) : -round(net + tax);
 		var receipt = {
 			lines: receiptLines,
@@ -1767,6 +1788,11 @@
 			return;
 		}
 
+		if (state.customer.gstin && !validGstin(state.customer.gstin)) {
+			toast("That GSTIN is not valid — 15 characters, e.g. 29ABCDE1234F1Z5", "error");
+			return;
+		}
+
 		var summary = totals();
 		if (summary.grand <= 0) {
 			toast("Bill total must be greater than zero", "error");
@@ -1791,7 +1817,7 @@
 			posting_datetime: serverNow(),
 			customer_name: state.customer.name || null,
 			customer_mobile: state.customer.mobile || null,
-			customer_gstin: state.customer.gstin || null,
+			customer_gstin: (state.customer.gstin || "").trim().toUpperCase() || null,
 			items: state.cart.map(function (line) {
 				return {
 					product: line.product,

@@ -36,6 +36,9 @@ def get_returnable(invoice):
 	for row in doc.items:
 		already = flt(returned.get(row.product))
 		available = flt(row.qty) - already
+		# the refund price is what was charged after any offer or manual
+		# discount, not the rate on the product today
+		charged = flt(row.amount) / flt(row.qty) if flt(row.qty) else flt(row.rate)
 		items.append(
 			{
 				"product": row.product,
@@ -45,7 +48,8 @@ def get_returnable(invoice):
 				"qty": flt(row.qty),
 				"returned_qty": already,
 				"returnable_qty": available if available > 0 else 0,
-				"rate": flt(row.rate),
+				"rate": flt(charged, 4),
+				"list_rate": flt(row.rate),
 				"tax_rate": flt(row.tax_rate),
 				"total_amount": flt(row.total_amount),
 			}
