@@ -1596,7 +1596,8 @@
 			esc(renderReceiptText(receipt)) +
 			"</div>" +
 			(status === "error" ? '<p class="rp-muted">' + esc(result.error || "") + "</p>" : "") +
-			'<div class="rp-modal-actions" style="justify-content:flex-start;margin-top:10px">' +
+			'<div class="rp-modal-actions" style="justify-content:flex-start;flex-wrap:wrap;margin-top:10px">' +
+			'<button class="rp-btn" id="rp-receipt-share">Share image</button>' +
 			'<button class="rp-btn" id="rp-receipt-print">Print</button>' +
 			(canWhatsapp ? '<button class="rp-btn" id="rp-receipt-whatsapp">WhatsApp bill</button>' : "") +
 			"</div>";
@@ -1607,6 +1608,55 @@
 			hideOk: true,
 			cancelText: "New bill",
 		});
+
+		// Rendered up front so the share sheet opens straight from the tap (some
+		// browsers refuse navigator.share once the gesture has been awaited).
+		var receiptFile = null;
+		var imageReady = buildReceiptImage(receipt, (result && result.invoice) || "").then(
+			function (file) {
+				receiptFile = file;
+				return file;
+			},
+			function (error) {
+				console.warn("Retail POS: could not render the receipt image", error);
+				return null;
+			}
+		);
+
+		var shareButton = document.getElementById("rp-receipt-share");
+		if (shareButton) {
+			shareButton.addEventListener("click", function () {
+				var label = shareButton.textContent;
+				shareButton.disabled = true;
+				shareButton.textContent = "Preparing…";
+				var note = result && result.invoice ? "Bill " + result.invoice : "Bill";
+				(receiptFile ? Promise.resolve(receiptFile) : imageReady)
+					.then(function (file) {
+						if (!file) {
+							toast("Could not prepare the receipt image", "error");
+							return null;
+						}
+						return shareReceiptImage(file, note).then(function (outcome) {
+							if (outcome === "shared") {
+								toast("Receipt image shared", "success");
+							} else {
+								toast("Receipt image saved — attach it in WhatsApp");
+							}
+						});
+					})
+					.catch(function (error) {
+						// dismissing the share sheet is not an error
+						if (error && error.name === "AbortError") {
+							return;
+						}
+						toast("Could not share the receipt image", "error");
+					})
+					.then(function () {
+						shareButton.disabled = false;
+						shareButton.textContent = label;
+					});
+			});
+		}
 
 		var printButton = document.getElementById("rp-receipt-print");
 		if (printButton) {
@@ -1653,6 +1703,227 @@
 				button.disabled = false;
 				button.textContent = label;
 			});
+	}
+
+	/* ------------------------------------------------------------ receipt image */
+	/* Draws the bill on a canvas so it can leave the phone as a picture. Canvas
+	 * text is drawn by the browser, so no extra library ships with the POS and
+	 * the image can be produced offline, straight after Charge. */
+	function buildReceiptImage(receipt, invoiceNo) {
+		return new Promise(function (resolve, reject) {
+			try {
+				var canvas = document.createElement("canvas");
+				var ctx = canvas.getContext("2d");
+				if (!ctx) {
+					throw new Error("Canvas is not supported");
+				}
+
+				var WIDTH = 720;
+				var PAD = 40;
+				var INNER = WIDTH - PAD * 2;
+				var fonts = {
+					title: "bold 34px 'Segoe UI', Arial, sans-serif",
+					big: "bold 24px 'Segoe UI', Arial, sans-serif",
+					body: "20px ui-monospace, Menlo, Consolas, monospace",
+					bodyBold: "bold 20px ui-monospace, Menlo, Consolas, monospace",
+					small: "18px ui-monospace, Menlo, Consolas, monospace",
+				};
+				var rows = [];
+
+				function widthOf(value, cssFont) {
+					ctx.font = cssFont;
+					return ctx.measureText(value).width;
+				}
+
+				function wrap(value, cssFont, max) {
+					var words = String(value).split(/\s+/);
+					var lines = [];
+					var current = "";
+					words.forEach(function (word) {
+						var next = current ? current + " " + word : word;
+						if (current && widthOf(next, cssFont) > max) {
+							lines.push(current);
+							current = word;
+						} else {
+							current = next;
+						}
+					});
+					if (current) {
+						lines.push(current);
+					}
+					return lines;
+				}
+
+				function line(value, options) {
+					options = options || {};
+					rows.push({
+						text: String(value),
+						font: options.font || fonts.body,
+						align: options.align || "left",
+						height: options.height || 28,
+						color: options.color || "#1f2430",
+					});
+				}
+
+				function pair(left, right, options) {
+					options = options || {};
+					rows.push({
+						left: String(left),
+						right: String(right),
+						font: options.font || fonts.small,
+						height: options.height || 26,
+						color: options.color || "#1f2430",
+					});
+				}
+
+				function rule() {
+					rows.push({ rule: true, height: 24 });
+				}
+
+				function gap(size) {
+					rows.push({ height: size || 12 });
+				}
+
+				function amount(value) {
+					return round(value).toFixed(2);
+				}
+
+				var branch = state.branch || {};
+				var warehouse = state.warehouse || {};
+
+				line(branch.branch_name || branch.name || "Retail store", {
+					font: fonts.title,
+					align: "center",
+					height: 46,
+				});
+				if (warehouse.warehouse_name || warehouse.name) {
+					line(warehouse.warehouse_name || warehouse.name, {
+						align: "center",
+						height: 26,
+						color: "#6b7280",
+					});
+				}
+				if (receipt.posting_datetime) {
+					line(receipt.posting_datetime, { align: "center", height: 24, color: "#6b7280" });
+				}
+				if (invoiceNo) {
+					line("Bill " + invoiceNo, { font: fonts.big, align: "center", height: 32 });
+				}
+				rule();
+
+				receipt.lines.forEach(function (item) {
+					wrap(item.item_name || "", fonts.body, INNER).forEach(function (part, index) {
+						line(part, { font: index ? fonts.body : fonts.bodyBold, height: 26 });
+					});
+					pair(item.qty + " × " + amount(item.rate), amount(item.total));
+					gap(8);
+				});
+				rule();
+
+				pair("Subtotal", amount(receipt.totals.net));
+				if (round(receipt.totals.discount)) {
+					pair("Discount", "-" + amount(receipt.totals.discount));
+				}
+				pair("Tax", amount(receipt.totals.tax));
+				pair("Total", amount(receipt.totals.grand), {
+					font: "bold 24px ui-monospace, Menlo, Consolas, monospace",
+					height: 38,
+				});
+				pair(receipt.mode || "Paid", amount(receipt.tendered || receipt.totals.grand));
+				if (receipt.change) {
+					pair("Change", amount(receipt.change));
+				}
+				if (receipt.customer) {
+					gap(10);
+					pair("Customer", receipt.customer, { font: fonts.body, height: 30 });
+				}
+				if (receipt.cashier) {
+					pair("Cashier", receipt.cashier);
+				}
+				if (branch.receipt_footer) {
+					gap(16);
+					wrap(branch.receipt_footer, fonts.small, INNER).forEach(function (part) {
+						line(part, { align: "center", height: 24, color: "#6b7280" });
+					});
+				}
+				gap(18);
+				line("Thank you!", { font: fonts.big, align: "center", height: 32 });
+				gap(6);
+
+				var height =
+					rows.reduce(function (total, row) {
+						return total + row.height;
+					}, PAD * 2) + 1;
+				canvas.width = WIDTH;
+				canvas.height = height;
+				ctx.fillStyle = "#ffffff";
+				ctx.fillRect(0, 0, WIDTH, height);
+				ctx.textBaseline = "alphabetic";
+
+				var y = PAD;
+				rows.forEach(function (row) {
+					if (row.rule) {
+						ctx.strokeStyle = "#d4d8de";
+						ctx.lineWidth = 2;
+						ctx.setLineDash([8, 8]);
+						ctx.beginPath();
+						ctx.moveTo(PAD, y + row.height / 2);
+						ctx.lineTo(WIDTH - PAD, y + row.height / 2);
+						ctx.stroke();
+						ctx.setLineDash([]);
+					} else if (row.left !== undefined) {
+						ctx.font = row.font;
+						ctx.fillStyle = row.color;
+						ctx.textAlign = "left";
+						ctx.fillText(row.left, PAD, y + row.height - 6);
+						ctx.textAlign = "right";
+						ctx.fillText(row.right, WIDTH - PAD, y + row.height - 6);
+					} else if (row.text !== undefined) {
+						ctx.font = row.font;
+						ctx.fillStyle = row.color;
+						ctx.textAlign = row.align || "left";
+						ctx.fillText(row.text, row.align === "center" ? WIDTH / 2 : PAD, y + row.height - 6);
+					}
+					// rows with only a height are spacers between sections
+					y += row.height;
+				});
+				ctx.textAlign = "left";
+
+				var filename = "receipt-" + String(invoiceNo || "bill").replace(/[^A-Za-z0-9._-]/g, "-") + ".png";
+				canvas.toBlob(function (blob) {
+					if (!blob) {
+						reject(new Error("Could not render the receipt image"));
+						return;
+					}
+					resolve(new File([blob], filename, { type: "image/png" }));
+				}, "image/png");
+			} catch (error) {
+				reject(error);
+			}
+		});
+	}
+
+	function shareReceiptImage(file, note) {
+		if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+			return navigator.share({ files: [file], title: "Receipt", text: note || "" }).then(function () {
+				return "shared";
+			});
+		}
+		downloadFile(file);
+		return Promise.resolve("downloaded");
+	}
+
+	function downloadFile(file) {
+		var url = URL.createObjectURL(file);
+		var link = document.createElement("a");
+		link.href = url;
+		link.download = file.name;
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+		global.setTimeout(function () {
+			URL.revokeObjectURL(url);
+		}, 5000);
 	}
 
 	function renderReceiptText(receipt) {

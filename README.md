@@ -246,6 +246,15 @@ Code-128/39, ITF, Codabar, QR). It uses the browser's `BarcodeDetector`, so it
 works on Android Chrome over HTTPS; browsers without it (notably iOS Safari)
 show a message and the cashier types or uses a Bluetooth scanner instead.
 
+**Sharing the bill.** The receipt shown after **Charge** has a **Share image**
+button: it draws the bill on a canvas (branch, bill no, items, totals, payment,
+footer) and hands the PNG to the phone's share sheet, where the cashier picks
+WhatsApp. The picture is produced on the device, so it works offline and needs
+no WhatsApp settings; where the browser cannot share files the PNG is saved
+to Downloads instead. When the WhatsApp Cloud API is configured, the separate
+**WhatsApp bill** button still delivers the bill document straight from the
+server, and `auto_send` keeps working as before.
+
 ## Reports
 
 Desk → **Reports** (or the Awesome Bar by name). All reports are branch-aware:
