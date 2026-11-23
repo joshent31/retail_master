@@ -1,0 +1,91 @@
+.rd-wrap {
+	padding-bottom: 24px;
+}
+
+.rd-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+	gap: 12px;
+	margin-bottom: 20px;
+}
+
+.rd-card {
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #e2e8f0);
+	border-left: 3px solid var(--gray-400, #94a3b8);
+	border-radius: 8px;
+	padding: 14px 16px;
+	box-shadow: var(--card-shadow, 0 1px 2px rgba(15, 23, 42, 0.04));
+}
+
+.rd-card.rd-blue {
+	border-left-color: #2490ef;
+}
+
+.rd-card.rd-green {
+	border-left-color: #22c55e;
+}
+
+.rd-card.rd-orange {
+	border-left-color: #f59e0b;
+}
+
+.rd-card.rd-red {
+	border-left-color: #ef4444;
+}
+
+.rd-card.rd-purple {
+	border-left-color: #7c3aed;
+}
+
+.rd-card-label {
+	color: var(--text-muted, #64748b);
+	font-size: 12px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.rd-card-value {
+	color: var(--text-color, #1f272e);
+	font-size: 21px;
+	font-weight: 600;
+	margin-top: 6px;
+	white-space: nowrap;
+}
+
+.rd-card-sub {
+	color: var(--text-muted, #64748b);
+	font-size: 12px;
+	margin-top: 4px;
+}
+
+.rd-charts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+	gap: 16px;
+}
+
+.rd-chart {
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #e2e8f0);
+	border-radius: 8px;
+	padding: 14px 16px;
+}
+
+.rd-chart.rd-wide {
+	grid-column: 1 / -1;
+}
+
+.rd-chart-title {
+	color: var(--text-color, #1f272e);
+	font-size: 14px;
+	font-weight: 600;
+	margin-bottom: 10px;
+}
+
+.rd-empty {
+	color: var(--text-muted, #64748b);
+	font-size: 13px;
+	padding: 40px 0;
+	text-align: center;
+}

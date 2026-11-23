@@ -21,6 +21,7 @@ DocTypes, so it installs on a plain Frappe v16 bench.
 - [Permissions](#permissions)
 - [Using the POS](#using-the-pos)
 - [Reports](#reports)
+- [Dashboard](#dashboard)
 - [Offline mode and sync](#offline-mode-and-sync)
 - [DocTypes](#doctypes)
 - [API](#api)
@@ -66,6 +67,7 @@ retail_ops/
 │   ├── stock.py                   # per-warehouse balances
 │   ├── api/
 │   │   ├── bootstrap.py           # catalog for the POS (cacheable)
+│   │   ├── dashboard.py           # cards + chart series for the dashboard
 │   │   ├── sessions.py            # open_day / close_day / summaries
 │   │   └── sync.py                # push queue / pull catalog
 │   ├── www/retail-pos.{py,html}   # the terminal page
@@ -75,7 +77,9 @@ retail_ops/
 │   │   ├── js/pos.js              # terminal UI
 │   │   ├── js/sw.js               # service worker (offline shell)
 │   │   └── css/retail-pos.css
-│   └── retail_ops/doctype/        # 9 DocTypes
+│   ├── retail_ops/doctype/        # 9 DocTypes
+│   ├── retail_ops/page/retail_dashboard/   # /app/retail-dashboard
+│   └── retail_ops/report/         # 6 script reports
 ```
 
 The POS is plain JavaScript — no build step, no node_modules, works on the
@@ -221,6 +225,22 @@ Query Reports, so they can honour branch permissions and compute columns such
 as product share and dues age in Python. **Retail Cashier** can run Sales
 Summary and Shift Reconciliation; the other reports are Admin/Manager only.
 
+## Dashboard
+
+Desk → `/app/retail-dashboard` (or the Awesome Bar → *Retail Dashboard*) shows
+the shop at a glance. It is open to Admin, Manager and Cashier, and every
+figure is limited to the branches the user is granted.
+
+Number cards: sales today with yesterday's comparison, bills today, change
+against yesterday, this month's sales, cash received today, credit
+outstanding, open day sessions and stock value.
+
+Charts: sales trend (day by day), sales by branch, payment mode split, top
+products by quantity and stock value by category. The period selector switches
+between 7, 30 and 90 days, and the branch selector narrows everything to one
+store. All figures are recomputed from submitted invoices, payments, sessions
+and stock balances on each refresh.
+
 ## Offline mode and sync
 
 The terminal is offline-first at every layer:
@@ -296,6 +316,7 @@ plus the normal DocType permissions.
 | `retail_ops.api.sync.status` | Server time / reachability probe |
 | `retail_ops.permissions.grant_branch_access` | Grant a user a branch |
 | `retail_ops.permissions.revoke_branch_access` | Revoke a branch |
+| `retail_ops.api.dashboard.get_dashboard` | Number cards and chart series for the Retail Dashboard |
 | `retail_ops.stock.get_stock_levels` | On-hand quantities |
 | `retail_ops.stock.rebuild_stock_balance` | Recompute balances from submitted bills (admin) |
 
