@@ -12,7 +12,12 @@ BRANCH_USER_PERMISSION = "Retail Branch"
 # HTTP
 # ---------------------------------------------------------------------------
 def add_service_worker_headers(response):
-	"""Allow /assets/retail_ops/js/sw.js to control the /retail-pos scope."""
+	"""POS headers that static file serving does not set by itself.
+
+	- sw.js needs `Service-Worker-Allowed: /` to control /retail-pos.
+	- manifest.json is stored as .json (so Frappe serves it like any asset) but
+	  browsers want the web manifest MIME type.
+	"""
 	try:
 		path = (frappe.local.request.path or "") if getattr(frappe.local, "request", None) else ""
 	except Exception:
@@ -20,6 +25,9 @@ def add_service_worker_headers(response):
 
 	if path.endswith("/retail_ops/js/sw.js"):
 		response.headers["Service-Worker-Allowed"] = "/"
+		response.headers["Cache-Control"] = "no-cache"
+	elif path.endswith("/retail_ops/manifest.json"):
+		response.headers["Content-Type"] = "application/manifest+json"
 		response.headers["Cache-Control"] = "no-cache"
 	return response
 

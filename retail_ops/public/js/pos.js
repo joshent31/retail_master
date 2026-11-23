@@ -136,6 +136,7 @@
 			"rp-tabbar",
 			"rp-tab-count",
 			"rp-tab-total",
+			"rp-install",
 			"rp-branch",
 			"rp-warehouse",
 			"rp-day-pill",
@@ -149,6 +150,7 @@
 			"rp-offline-warning",
 			"rp-search",
 			"rp-search-clear",
+			"rp-scan",
 			"rp-categories",
 			"rp-products",
 			"rp-products-empty",
@@ -170,6 +172,10 @@
 			"rp-modal-body",
 			"rp-modal-cancel",
 			"rp-modal-ok",
+			"rp-scanner",
+			"rp-scanner-video",
+			"rp-scanner-hint",
+			"rp-scanner-close",
 			"rp-toasts",
 		].forEach(function (id) {
 			dom[id] = document.getElementById(id);
@@ -276,6 +282,14 @@
 			// on a phone this is the quickest way to reach Open / Close day
 			setTab("menu");
 		});
+		dom["rp-install"].addEventListener("click", installApp);
+		dom["rp-scan"].addEventListener("click", startScanner);
+		dom["rp-scanner-close"].addEventListener("click", stopScanner);
+		document.addEventListener("visibilitychange", function () {
+			if (document.hidden) {
+				stopScanner();
+			}
+		});
 		dom["rp-tabbar"].addEventListener("click", function (event) {
 			var button = event.target.closest("[data-tab]");
 			if (button) {
@@ -292,6 +306,7 @@
 				dom["rp-search"].select();
 			}
 			if (event.key === "Escape") {
+				stopScanner();
 				closeModal();
 			}
 		});
@@ -338,6 +353,7 @@
 		cacheDom();
 		bindEvents();
 		setTab(state.tab);
+		setupInstall();
 		registerServiceWorker();
 
 		RetailSync.onState(function (syncState) {
@@ -958,6 +974,186 @@
 		state.tenderedTouched = false;
 		saveCart();
 		renderCart();
+	}
+
+	/* --------------------------------------------------------------- install app */
+	var installPrompt = null;
+
+	function setupInstall() {
+		var standalone =
+			(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+			navigator.standalone === true;
+		if (standalone) {
+			dom["rp-install"].hidden = true;
+			return;
+		}
+
+		global.addEventListener("beforeinstallprompt", function (event) {
+			event.preventDefault();
+			installPrompt = event;
+			dom["rp-install"].hidden = false;
+		});
+		global.addEventListener("appinstalled", function () {
+			installPrompt = null;
+			dom["rp-install"].hidden = true;
+			toast("Retail POS added to your home screen", "success");
+		});
+
+		if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+			// Safari never fires beforeinstallprompt, so offer the manual steps
+			dom["rp-install"].hidden = false;
+		}
+	}
+
+	function installApp() {
+		if (!installPrompt) {
+			var ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
+			openModal({
+				title: "Add Retail POS to your home screen",
+				html:
+					"<p>" +
+					(ios
+						? "Tap <strong>Share</strong> in Safari, then <strong>Add to Home Screen</strong>."
+						: "Open the browser menu and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.") +
+					"</p><p>It then opens full screen, like an app, and still works offline.</p>",
+				okText: "Got it",
+				hideCancel: true,
+			});
+			return;
+		}
+		var prompt = installPrompt;
+		installPrompt = null;
+		prompt.prompt();
+		prompt.userChoice
+			.then(function (choice) {
+				if (choice && choice.outcome === "accepted") {
+					dom["rp-install"].hidden = true;
+					toast("Installing Retail POS…", "success");
+				}
+			})
+			.catch(function () {});
+	}
+
+	/* ----------------------------------------------------------- camera scanning */
+	var scanStream = null;
+	var scanTimer = null;
+	var scanDetector = null;
+	var scanBusy = false;
+
+	function startScanner() {
+		if (scanStream) {
+			return;
+		}
+		if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+			toast("The camera needs a secure (https) connection", "error");
+			return;
+		}
+		if (!("BarcodeDetector" in global)) {
+			toast("This browser cannot scan barcodes — type the code in the search box", "error");
+			return;
+		}
+
+		dom["rp-scanner"].hidden = false;
+		dom["rp-scanner-hint"].textContent = "Starting the camera…";
+		navigator.mediaDevices
+			.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })
+			.then(function (stream) {
+				scanStream = stream;
+				var video = dom["rp-scanner-video"];
+				video.srcObject = stream;
+				video.play().catch(function () {});
+				dom["rp-scanner-hint"].textContent = "Point the camera at the barcode";
+				return scanDetectorFor();
+			})
+			.then(function (detector) {
+				if (!detector || !scanStream) {
+					return;
+				}
+				scanDetector = detector;
+				scanTimer = global.setInterval(scanFrame, 250);
+			})
+			.catch(function (error) {
+				stopScanner();
+				toast(cameraError(error), "error");
+			});
+	}
+
+	function scanDetectorFor() {
+		var wanted = [
+			"ean_13",
+			"ean_8",
+			"upc_a",
+			"upc_e",
+			"code_128",
+			"code_39",
+			"itf",
+			"codabar",
+			"qr_code",
+		];
+		if (!global.BarcodeDetector.getSupportedFormats) {
+			return Promise.resolve(new global.BarcodeDetector());
+		}
+		return global.BarcodeDetector.getSupportedFormats().then(function (formats) {
+			var usable = wanted.filter(function (format) {
+				return formats.indexOf(format) !== -1;
+			});
+			return usable.length ? new global.BarcodeDetector({ formats: usable }) : null;
+		});
+	}
+
+	function scanFrame() {
+		var video = dom["rp-scanner-video"];
+		if (scanBusy || !scanDetector || !scanStream || video.readyState < 2) {
+			return;
+		}
+		scanBusy = true;
+		scanDetector
+			.detect(video)
+			.then(function (codes) {
+				scanBusy = false;
+				if (!codes || !codes.length || !codes[0].rawValue) {
+					return;
+				}
+				var value = codes[0].rawValue;
+				stopScanner();
+				handleScan(value);
+			})
+			.catch(function () {
+				scanBusy = false;
+			});
+	}
+
+	function stopScanner() {
+		if (scanTimer) {
+			global.clearInterval(scanTimer);
+			scanTimer = null;
+		}
+		scanDetector = null;
+		scanBusy = false;
+		if (scanStream) {
+			scanStream.getTracks().forEach(function (track) {
+				track.stop();
+			});
+			scanStream = null;
+		}
+		if (dom["rp-scanner-video"]) {
+			dom["rp-scanner-video"].srcObject = null;
+			dom["rp-scanner"].hidden = true;
+		}
+	}
+
+	function cameraError(error) {
+		var name = (error && error.name) || "";
+		if (name === "NotAllowedError" || name === "SecurityError") {
+			return "Camera permission was denied";
+		}
+		if (name === "NotFoundError" || name === "OverconstrainedError") {
+			return "No camera found on this device";
+		}
+		if (name === "NotReadableError") {
+			return "The camera is in use by another app";
+		}
+		return "Could not start the camera";
 	}
 
 	/* ------------------------------------------------------------------ modals */

@@ -2,6 +2,17 @@
 
 {% block title %}{{ page_title }}{% endblock %}
 
+{% block head_include %}
+{{ super() }}
+<link rel="manifest" href="/assets/retail_ops/manifest.json">
+<meta name="theme-color" content="#1f7a5c">
+<meta name="application-name" content="Retail POS">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Retail POS">
+<link rel="apple-touch-icon" href="/assets/retail_ops/images/retail-pos-180.png">
+{% endblock %}
+
 {% block page_content %}
 <link rel="stylesheet" href="/assets/retail_ops/css/retail-pos.css">
 
@@ -19,6 +30,7 @@
 			<button class="rp-pill" id="rp-day-pill" type="button" title="Day and sync settings">Day closed</button>
 			<span class="rp-pill" id="rp-net-pill">Checking…</span>
 			<span class="rp-queue" id="rp-queue" hidden></span>
+			<button class="rp-pill rp-install" id="rp-install" type="button" hidden>Install app</button>
 		</div>
 
 		<div class="rp-controls">
@@ -49,6 +61,7 @@
 		<section class="rp-catalog">
 			<div class="rp-search">
 				<input id="rp-search" type="search" autocomplete="off" placeholder="Scan barcode or search product (F2)" />
+				<button class="rp-btn" id="rp-scan" type="button" title="Scan a barcode with the camera" aria-label="Scan barcode with the camera">Scan</button>
 				<button class="rp-btn" id="rp-search-clear" title="Clear search">×</button>
 			</div>
 			<div class="rp-chips" id="rp-categories"></div>
@@ -115,6 +128,15 @@
 			<button class="rp-btn" id="rp-modal-cancel">Cancel</button>
 			<button class="rp-btn rp-btn-primary" id="rp-modal-ok">Confirm</button>
 		</div>
+	</div>
+</div>
+
+<div class="rp-scanner" id="rp-scanner" hidden>
+	<video id="rp-scanner-video" playsinline muted></video>
+	<div class="rp-scanner-frame"></div>
+	<div class="rp-scanner-hud">
+		<div class="rp-scanner-hint" id="rp-scanner-hint">Point the camera at the barcode</div>
+		<button class="rp-btn" id="rp-scanner-close" type="button">Close</button>
 	</div>
 </div>
 

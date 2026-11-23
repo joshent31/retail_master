@@ -1,0 +1,32 @@
+{
+	"name": "Retail POS",
+	"short_name": "Retail POS",
+	"description": "Offline-first point of sale: billing, day sessions and stock for Retail Ops.",
+	"id": "/retail-pos",
+	"start_url": "/retail-pos",
+	"scope": "/",
+	"display": "standalone",
+	"orientation": "portrait",
+	"background_color": "#f4f5f7",
+	"theme_color": "#1f7a5c",
+	"icons": [
+		{
+			"src": "/assets/retail_ops/images/retail-pos-192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/assets/retail_ops/images/retail-pos-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/assets/retail_ops/images/retail-pos-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "maskable"
+		}
+	]
+}

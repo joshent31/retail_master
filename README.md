@@ -226,6 +226,20 @@ the next customer. The layout works offline the same way the desktop one does.
 The Desk dashboard also drops to a single column with two cards per row on a
 phone; reports use the standard Desk list, which is already responsive.
 
+**Install it as an app.** On Android Chrome, open `/retail-pos` and tap
+**Install app** in the header (or *Menu → Install app*). On iPhone, use
+*Share → Add to Home Screen* — the header button shows these steps on iOS.
+The app then opens full screen without browser chrome, keeps its own icon, and
+the service worker serves the same shell offline. Installation needs HTTPS
+(or `localhost`); the manifest lives at `/assets/retail_ops/manifest.json` and
+the icons at `/assets/retail_ops/images/`.
+
+**Camera scanning.** The **Scan** button next to the search box opens the rear
+camera and adds the product whose barcode it reads (EAN-13/8, UPC-A/E,
+Code-128/39, ITF, Codabar, QR). It uses the browser's `BarcodeDetector`, so it
+works on Android Chrome over HTTPS; browsers without it (notably iOS Safari)
+show a message and the cashier types or uses a Bluetooth scanner instead.
+
 ## Reports
 
 Desk → **Reports** (or the Awesome Bar by name). All reports are branch-aware:

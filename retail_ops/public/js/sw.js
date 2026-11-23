@@ -9,9 +9,12 @@
  */
 // bump the version whenever the POS shell changes, so installed terminals
 // replace the cached CSS/JS on their next visit
-var CACHE_NAME = "retail-ops-v2";
+var CACHE_NAME = "retail-ops-v3";
 var SHELL = [
 	"/retail-pos",
+	"/assets/retail_ops/manifest.json",
+	"/assets/retail_ops/images/retail-pos-192.png",
+	"/assets/retail_ops/images/retail-pos-512.png",
 	"/assets/retail_ops/css/retail-pos.css",
 	"/assets/retail_ops/js/offline-db.js",
 	"/assets/retail_ops/js/sync.js",
