@@ -12,10 +12,16 @@
   "day_session",
   "customer_name",
   "customer_mobile",
+  "customer_gstin",
   "column_break_meta",
   "posting_datetime",
   "status",
   "sync_source",
+  "section_return",
+  "is_return",
+  "return_against",
+  "return_reason",
+  "refund_mode",
   "section_items",
   "items",
   "section_payments",
@@ -24,6 +30,12 @@
   "net_total",
   "discount_total",
   "tax_total",
+  "tax_type",
+  "place_of_supply",
+  "column_break_gst",
+  "cgst_total",
+  "sgst_total",
+  "igst_total",
   "column_break_totals",
   "grand_total",
   "paid_amount",
@@ -91,6 +103,13 @@
    "options": "Phone"
   },
   {
+   "fieldname": "customer_gstin",
+   "fieldtype": "Data",
+   "label": "Customer GSTIN",
+   "in_list_view": 0,
+   "description": "Leave blank for a retail bill; filled in it makes this a tax invoice."
+  },
+  {
    "fieldname": "column_break_meta",
    "fieldtype": "Column Break"
   },
@@ -120,6 +139,40 @@
    "no_copy": 1,
    "options": "Online\nOffline Sync",
    "read_only": 1
+  },
+  {
+   "fieldname": "section_return",
+   "fieldtype": "Section Break",
+   "label": "Return",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "is_return",
+   "fieldtype": "Check",
+   "label": "Is Return",
+   "default": "0"
+  },
+  {
+   "fieldname": "return_against",
+   "fieldtype": "Link",
+   "label": "Return Against",
+   "options": "Retail Invoice",
+   "depends_on": "is_return",
+   "read_only": 1
+  },
+  {
+   "fieldname": "return_reason",
+   "fieldtype": "Small Text",
+   "label": "Return Reason",
+   "depends_on": "is_return"
+  },
+  {
+   "fieldname": "refund_mode",
+   "fieldtype": "Select",
+   "label": "Refund Mode",
+   "options": "\nCash\nCard\nUPI\nCredit",
+   "default": "Cash",
+   "depends_on": "is_return"
   },
   {
    "fieldname": "section_items",
@@ -165,6 +218,41 @@
    "fieldname": "tax_total",
    "fieldtype": "Currency",
    "label": "Tax",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tax_type",
+   "fieldtype": "Select",
+   "label": "Tax Type",
+   "options": "\nIntra-State\nInter-State",
+   "read_only": 1
+  },
+  {
+   "fieldname": "place_of_supply",
+   "fieldtype": "Data",
+   "label": "Place of Supply",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_gst",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cgst_total",
+   "fieldtype": "Currency",
+   "label": "CGST",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sgst_total",
+   "fieldtype": "Currency",
+   "label": "SGST",
+   "read_only": 1
+  },
+  {
+   "fieldname": "igst_total",
+   "fieldtype": "Currency",
+   "label": "IGST",
    "read_only": 1
   },
   {

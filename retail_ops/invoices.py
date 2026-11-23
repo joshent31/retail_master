@@ -8,7 +8,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, get_datetime, getdate, now
+from frappe.utils import add_days, cint, flt, get_datetime, getdate, now
 
 from retail_ops.sessions import get_open_session, update_session_totals
 from retail_ops.stock import apply_stock_delta
@@ -23,6 +23,9 @@ from retail_ops.whatsapp import maybe_send_after_submit
 
 PAYMENT_MODES = ("Cash", "Card", "UPI", "Credit")
 
+# Returns are stored as a normal bill with negative quantities, so every
+# report that sums qty/amount nets them out without special cases.
+
 
 # ---------------------------------------------------------------------------
 # Controller hook: validate
@@ -34,6 +37,7 @@ def validate_invoice(doc, method=None):
 	assert_branch_access(doc.branch)
 	branch = get_branch(doc.branch)
 	warehouse = get_warehouse(doc.warehouse, branch=doc.branch)
+	doc.customer_gstin = (doc.customer_gstin or "").strip().upper() or None
 	doc.warehouse = warehouse.name
 	doc.posting_datetime = doc.posting_datetime or now()
 	doc.sync_source = doc.sync_source or "Online"
@@ -47,16 +51,133 @@ def validate_invoice(doc, method=None):
 			)
 		doc.day_session = open_session.name
 
+	validate_return(doc, branch)
 	validate_session(doc, branch)
 
 	if not doc.items:
 		frappe.throw(_("A bill needs at least one item"), frappe.ValidationError)
 
+	resolve_tax_type(doc, branch)
 	for row in doc.items:
-		validate_item(row, branch)
+		validate_item(doc, row, branch)
 
 	calculate_totals(doc)
 	validate_payments(doc)
+
+
+# ---------------------------------------------------------------------------
+# Returns
+# ---------------------------------------------------------------------------
+def validate_return(doc, branch):
+	if not cint(doc.is_return):
+		doc.return_against = None
+		return
+
+	if not doc.return_against:
+		frappe.throw(_("A return needs the bill it is returning"), frappe.ValidationError)
+
+	against = frappe.db.get_value(
+		"Retail Invoice",
+		doc.return_against,
+		["name", "docstatus", "branch", "posting_datetime", "is_return", "customer_name", "customer_mobile", "customer_gstin"],
+		as_dict=True,
+	)
+	if not against:
+		frappe.throw(
+			_("Bill {0} not found").format(frappe.bold(doc.return_against)), frappe.DoesNotExistError
+		)
+	if against.docstatus != 1:
+		frappe.throw(_("Only a submitted bill can be returned"), frappe.ValidationError)
+	if cint(against.is_return):
+		frappe.throw(_("A credit note cannot be returned"), frappe.ValidationError)
+	if against.branch != doc.branch:
+		frappe.throw(
+			_("Bill {0} belongs to another branch").format(frappe.bold(against.name)),
+			frappe.ValidationError,
+		)
+
+	window = cint(branch.get("return_within_days"))
+	if window and getdate(doc.posting_datetime) > add_days(getdate(against.posting_datetime), window):
+		frappe.throw(
+			_("Bill {0} is outside the {1} day return window").format(
+				frappe.bold(against.name), window
+			),
+			frappe.ValidationError,
+		)
+
+	# keep the customer on the credit note, the cashier only picks the items
+	doc.customer_name = doc.customer_name or against.customer_name
+	doc.customer_mobile = doc.customer_mobile or against.customer_mobile
+	doc.customer_gstin = doc.customer_gstin or against.customer_gstin
+
+	returned = returned_qty(against.name)
+	original = frappe.db.get_all(
+		"Retail Invoice Item",
+		filters={"parent": against.name, "parenttype": "Retail Invoice"},
+		fields=["product", "qty", "rate"],
+	)
+	sold = {row.product: flt(row.qty) for row in original}
+	original_rates = {row.product: flt(row.rate) for row in original}
+	for row in doc.items:
+		# a refund always goes back at the price that was actually charged
+		if row.product in original_rates:
+			row.rate = original_rates[row.product]
+
+	for row in doc.items:
+		if not row.product:
+			continue
+		available = flt(sold.get(row.product)) - flt(returned.get(row.product))
+		if abs(flt(row.qty)) > available + 0.0005:
+			frappe.throw(
+				_("Only {0} of {1} can still be returned on {2}").format(
+					frappe.bold(available), frappe.bold(row.item_name or row.product), frappe.bold(against.name)
+				),
+				frappe.ValidationError,
+			)
+
+
+def returned_qty(invoice):
+	"""How much of each product has already come back on credit notes."""
+	rows = frappe.db.sql(
+		"""
+		select it.product, sum(it.qty) as qty
+		from `tabRetail Invoice Item` it
+		inner join `tabRetail Invoice` i on i.name = it.parent
+		where i.return_against = %(invoice)s and i.docstatus = 1
+		group by it.product
+		""",
+		{"invoice": invoice},
+		as_dict=True,
+	)
+	# return rows carry negative qty, so flip the sign to get "returned so far"
+	return {row.product: -flt(row.qty) for row in rows}
+
+
+# ---------------------------------------------------------------------------
+# GST
+# ---------------------------------------------------------------------------
+def resolve_tax_type(doc, branch):
+	"""CGST+SGST inside the state, IGST across it (GSTIN prefix decides)."""
+	state = str(branch.get("state_code") or "").strip()
+	customer_state = str(doc.customer_gstin or "")[:2]
+	if customer_state.isdigit() and state and customer_state != state:
+		doc.tax_type = "Inter-State"
+		doc.place_of_supply = customer_state
+	else:
+		doc.tax_type = "Intra-State"
+		doc.place_of_supply = state or customer_state or ""
+
+
+def split_gst(doc, row):
+	tax = flt(row.tax_amount)
+	if doc.tax_type == "Inter-State":
+		row.cgst_amount = 0
+		row.sgst_amount = 0
+		row.igst_amount = tax
+	else:
+		row.cgst_amount = money(tax / 2)
+		row.sgst_amount = money(tax - row.cgst_amount)
+		row.igst_amount = 0
 
 
 def validate_session(doc, branch):
@@ -100,14 +221,14 @@ def validate_session(doc, branch):
 	)
 
 
-def validate_item(row, branch):
+def validate_item(doc, row, branch):
 	if not row.product:
 		frappe.throw(_("Every line needs a product"), frappe.ValidationError)
 
 	product = frappe.db.get_value(
 		"Retail Product",
 		row.product,
-		["item_code", "product_name", "uom", "rate", "tax_rate", "is_active"],
+		["item_code", "product_name", "uom", "rate", "tax_rate", "is_active", "hsn_code", "category"],
 		as_dict=True,
 	)
 	if not product:
@@ -116,15 +237,22 @@ def validate_item(row, branch):
 		frappe.throw(_("Product {0} is inactive").format(frappe.bold(row.product)), frappe.ValidationError)
 
 	row.qty = flt(row.qty, 3)
-	if row.qty <= 0:
+	if cint(doc.is_return):
+		row.qty = -abs(row.qty)
+		if row.qty >= 0:
+			frappe.throw(_("Quantity must be greater than zero for {0}").format(product.product_name))
+	elif row.qty <= 0:
 		frappe.throw(_("Quantity must be greater than zero for {0}").format(product.product_name))
 
 	row.item_code = product.item_code
 	row.item_name = product.product_name
 	row.uom = product.uom
 	row.tax_rate = flt(product.tax_rate)
+	row.hsn_code = product.hsn_code or ""
 
-	if cint(branch.get("allow_price_override")):
+	if cint(doc.is_return):
+		row.rate = money(row.rate)
+	elif cint(branch.get("allow_price_override")):
 		row.rate = money(row.rate if row.rate is not None else product.rate)
 	else:
 		row.rate = money(product.rate)
@@ -132,20 +260,48 @@ def validate_item(row, branch):
 	if row.rate < 0:
 		frappe.throw(_("Rate cannot be negative for {0}").format(product.product_name))
 
-	row.discount_amount = min(money(row.discount_amount), money(row.rate * row.qty))
-	row.amount = money(row.rate * row.qty - row.discount_amount)
+	line_value = money(row.rate * row.qty)
+	if cint(doc.is_return):
+		# offers and manual discounts never apply to money going back
+		row.discount_amount = 0
+		row.amount = line_value
+	else:
+		from retail_ops.offers import offer_discount
+
+		offer = offer_discount(doc.branch, product, flt(row.qty), line_value)
+		manual = min(money(row.discount_amount), max(line_value, 0))
+		row.discount_amount = max(manual, money(offer))
+		row.amount = money(line_value - row.discount_amount)
+
 	row.tax_amount = money(row.amount * row.tax_rate / 100)
 	row.total_amount = money(row.amount + row.tax_amount)
+	split_gst(doc, row)
 
 
 def calculate_totals(doc):
 	doc.net_total = money(sum(flt(row.amount) for row in doc.items))
 	doc.discount_total = money(sum(flt(row.discount_amount) for row in doc.items))
 	doc.tax_total = money(sum(flt(row.tax_amount) for row in doc.items))
+	doc.cgst_total = money(sum(flt(row.cgst_amount) for row in doc.items))
+	doc.sgst_total = money(sum(flt(row.sgst_amount) for row in doc.items))
+	doc.igst_total = money(sum(flt(row.igst_amount) for row in doc.items))
 	doc.grand_total = money(doc.net_total + doc.tax_total)
 
 	paid = sum(flt(payment.amount) for payment in doc.payments if payment.mode != "Credit")
 	doc.paid_amount = money(paid)
+
+	if cint(doc.is_return):
+		# a refund leaves the drawer; nothing changes hands back to the customer
+		doc.change_amount = 0
+		doc.outstanding_amount = money(doc.grand_total - paid)
+		if abs(flt(doc.outstanding_amount)) <= 0.005:
+			doc.status = "Paid"
+		elif flt(doc.paid_amount):
+			doc.status = "Partially Paid"
+		else:
+			doc.status = "Unpaid"
+		return
+
 	doc.change_amount = money(max(0, paid - doc.grand_total))
 	doc.outstanding_amount = money(max(0, doc.grand_total - paid))
 
@@ -158,12 +314,27 @@ def calculate_totals(doc):
 
 
 def validate_payments(doc):
+	is_return = bool(cint(doc.is_return))
 	for payment in doc.payments:
 		if payment.mode not in PAYMENT_MODES:
 			frappe.throw(_("Unknown payment mode {0}").format(payment.mode), frappe.ValidationError)
 		payment.amount = money(payment.amount)
-		if payment.amount < 0:
+		if not is_return and payment.amount < 0:
 			frappe.throw(_("Payment amounts cannot be negative"), frappe.ValidationError)
+		if is_return and payment.amount > 0:
+			frappe.throw(
+				_("A refund is paid out, so its amount is negative"), frappe.ValidationError
+			)
+
+	if is_return:
+		if not doc.payments and flt(doc.grand_total):
+			# whatever the cashier did not hand back stays as store credit
+			doc.append(
+				"payments",
+				{"mode": doc.refund_mode or "Cash", "amount": doc.grand_total},
+			)
+			calculate_totals(doc)
+		return
 
 	# A bill with no payment rows is a full credit sale.
 	if not doc.payments and doc.grand_total > 0:
@@ -244,10 +415,15 @@ def create_invoice(payload, sync_source="Online"):
 	doc.day_session = session_key
 	doc.customer_name = data.get("customer_name")
 	doc.customer_mobile = data.get("customer_mobile")
+	doc.customer_gstin = data.get("customer_gstin")
 	doc.posting_datetime = data.get("posting_datetime") or now()
 	doc.sync_source = data.get("sync_source") or sync_source
 	doc.offline_uuid = offline_uuid
 	doc.remarks = data.get("remarks")
+	doc.is_return = cint(data.get("is_return"))
+	doc.return_against = data.get("return_against") if doc.is_return else None
+	doc.return_reason = data.get("return_reason") if doc.is_return else None
+	doc.refund_mode = data.get("refund_mode") if doc.is_return else None
 
 	for item in data.get("items") or []:
 		doc.append(
@@ -290,6 +466,9 @@ def create_invoice(payload, sync_source="Online"):
 		"invoice": doc.name,
 		"grand_total": flt(doc.grand_total),
 		"status_detail": doc.status,
+		"is_return": cint(doc.is_return),
+		"return_against": doc.return_against,
+		"refund_mode": doc.refund_mode,
 		"server_time": now(),
 	}
 
@@ -310,6 +489,13 @@ def invoice_snapshot(doc):
 		"status": doc.status,
 		"docstatus": doc.docstatus,
 		"offline_uuid": doc.offline_uuid,
+		"is_return": cint(doc.is_return),
+		"return_against": doc.return_against,
+		"customer_gstin": doc.customer_gstin,
+		"tax_type": doc.tax_type,
+		"cgst_total": flt(doc.cgst_total),
+		"sgst_total": flt(doc.sgst_total),
+		"igst_total": flt(doc.igst_total),
 		"items": [
 			{
 				"product": row.product,

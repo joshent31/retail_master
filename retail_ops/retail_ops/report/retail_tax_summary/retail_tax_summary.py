@@ -17,6 +17,9 @@ def execute(filters=None):
 		{"fieldname": "invoices", "label": _("Bills"), "fieldtype": "Int", "width": 80},
 		{"fieldname": "qty", "label": _("Qty"), "fieldtype": "Float", "width": 100},
 		{"fieldname": "taxable", "label": _("Taxable Amount"), "fieldtype": "Currency", "width": 150},
+		{"fieldname": "cgst", "label": _("CGST"), "fieldtype": "Currency", "width": 120},
+		{"fieldname": "sgst", "label": _("SGST"), "fieldtype": "Currency", "width": 120},
+		{"fieldname": "igst", "label": _("IGST"), "fieldtype": "Currency", "width": 120},
 		{"fieldname": "tax", "label": _("Tax"), "fieldtype": "Currency", "width": 130},
 		{"fieldname": "total", "label": _("Total"), "fieldtype": "Currency", "width": 140},
 	]
@@ -42,6 +45,9 @@ def execute(filters=None):
 			count(distinct i.name) as invoices,
 			sum(it.qty) as qty,
 			sum(it.amount) as taxable,
+			sum(coalesce(it.cgst_amount, 0)) as cgst,
+			sum(coalesce(it.sgst_amount, 0)) as sgst,
+			sum(coalesce(it.igst_amount, 0)) as igst,
 			sum(it.tax_amount) as tax,
 			sum(it.total_amount) as total
 		from `tabRetail Invoice Item` it

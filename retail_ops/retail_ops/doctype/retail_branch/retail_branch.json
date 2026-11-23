@@ -20,10 +20,13 @@
   "city",
   "pincode",
   "section_pos_settings",
+  "gstin",
+  "state_code",
   "allow_offline_billing",
   "allow_negative_stock",
   "allow_price_override",
   "allow_post_close_billing",
+  "return_within_days",
   "receipt_footer"
  ],
  "fields": [
@@ -97,6 +100,17 @@
    "label": "POS Settings"
   },
   {
+   "fieldname": "gstin",
+   "fieldtype": "Data",
+   "label": "GSTIN"
+  },
+  {
+   "fieldname": "state_code",
+   "fieldtype": "Data",
+   "label": "State Code",
+   "description": "Two digit GST state code, e.g. 32 for Kerala. Used to split CGST/SGST or IGST."
+  },
+  {
    "default": "1",
    "fieldname": "allow_offline_billing",
    "fieldtype": "Check",
@@ -121,6 +135,13 @@
    "fieldtype": "Check",
    "label": "Allow Billing After Day Close",
    "description": "Only affects online terminals; invoices queued offline are always accepted for their own open day"
+  },
+  {
+   "fieldname": "return_within_days",
+   "fieldtype": "Int",
+   "label": "Return Within Days",
+   "default": "0",
+   "description": "0 allows returns on any past bill."
   },
   {
    "fieldname": "receipt_footer",

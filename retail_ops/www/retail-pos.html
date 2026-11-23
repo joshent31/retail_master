@@ -73,11 +73,15 @@
 		<aside class="rp-cart">
 			<div class="rp-cart-head">
 				<strong>Current bill</strong>
-				<button class="rp-link" id="rp-clear">Clear</button>
+				<span class="rp-cart-head-actions">
+					<button class="rp-link" id="rp-return" type="button">Return</button>
+					<button class="rp-link" id="rp-clear">Clear</button>
+				</span>
 			</div>
 			<div class="rp-customer">
 				<input id="rp-customer-name" type="text" placeholder="Customer name (optional)" />
 				<input id="rp-customer-mobile" type="tel" placeholder="Mobile (optional)" />
+				<input id="rp-customer-gstin" type="text" placeholder="GSTIN for a tax invoice (optional)" maxlength="15" autocapitalize="characters" />
 			</div>
 			<div class="rp-lines" id="rp-cart"></div>
 			<div class="rp-totals">
@@ -133,8 +137,7 @@
 </div>
 
 <div class="rp-scanner" id="rp-scanner" hidden>
-	<video id="rp-scanner-video" playsinline muted></video>
-	<div class="rp-scanner-frame"></div>
+	<video id="rp-scanner-video" playsinline muted></video>			<div class="rp-scanner-frame"></div>
 	<div class="rp-scanner-hud">
 		<div class="rp-scanner-hint" id="rp-scanner-hint">Point the camera at the barcode</div>
 		<button class="rp-btn" id="rp-scanner-close" type="button">Close</button>

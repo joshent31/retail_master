@@ -29,6 +29,10 @@ doc_events = {
     "Retail Day Session": {
         "validate": "retail_ops.sessions.validate_session",
     },
+    "Retail Offer": {
+        "on_update": "retail_ops.offers.validate",
+        "on_trash": "retail_ops.offers.on_trash",
+    },
     "User Permission": {
         "after_insert": "retail_ops.permissions.clear_cache_after_user_permission_change",
         "on_update": "retail_ops.permissions.clear_cache_after_user_permission_change",

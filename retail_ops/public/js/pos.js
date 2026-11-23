@@ -13,13 +13,14 @@
 		products: [],
 		productIndex: new Map(),
 		stock: new Map(),
+		offers: [],
 		openSessions: [],
 		can: {},
 		branch: null,
 		warehouse: null,
 		session: null,
 		cart: [],
-		customer: { name: "", mobile: "" },
+		customer: { name: "", mobile: "", gstin: "" },
 		query: "",
 		category: "",
 		tab: "products",
@@ -159,6 +160,8 @@
 			"rp-clear",
 			"rp-customer-name",
 			"rp-customer-mobile",
+			"rp-customer-gstin",
+			"rp-return",
 			"rp-total-net",
 			"rp-total-discount",
 			"rp-total-tax",
@@ -256,6 +259,7 @@
 				return;
 			}
 			line.rate = Math.max(0, num(input.value));
+			applyLineOffers();
 			saveCart();
 			renderCart();
 		});
@@ -276,6 +280,11 @@
 			state.customer.mobile = this.value;
 			saveCart();
 		});
+		dom["rp-customer-gstin"].addEventListener("input", function () {
+			state.customer.gstin = this.value.trim().toUpperCase();
+			saveCart();
+		});
+		dom["rp-return"].addEventListener("click", openReturn);
 		dom["rp-tendered"].addEventListener("input", function () {
 			state.tenderedTouched = true;
 		});
@@ -423,6 +432,9 @@
 		(catalog.stock || []).forEach(function (row) {
 			state.stock.set(row.product + "::" + row.warehouse, num(row.qty));
 		});
+		if (catalog.offers) {
+			state.offers = catalog.offers;
+		}
 		state.openSessions = catalog.open_sessions || [];
 
 		var branchNames = state.branches.map(function (branch) {
@@ -463,6 +475,7 @@
 		}
 
 		syncSessionFromServer();
+		applyLineOffers();
 		renderAll();
 	}
 
@@ -491,7 +504,7 @@
 				var cart = metaCache.cart;
 				if (cart && cart.branch === state.branch.name && cart.warehouse === state.warehouse.name) {
 					state.cart = Array.isArray(cart.lines) ? cart.lines : [];
-					state.customer = cart.customer || { name: "", mobile: "" };
+					state.customer = Object.assign({ name: "", mobile: "", gstin: "" }, cart.customer || {});
 				}
 				var key = sessionStoreKey();
 				if (!key) {
@@ -515,6 +528,8 @@
 				}
 				dom["rp-customer-name"].value = state.customer.name || "";
 				dom["rp-customer-mobile"].value = state.customer.mobile || "";
+				dom["rp-customer-gstin"].value = state.customer.gstin || "";
+				applyLineOffers();
 			});
 	}
 
@@ -806,6 +821,93 @@
 		});
 	}
 
+	/* ------------------------------------------------------------------ offers */
+	/* Same rules as retail_ops/offers.py: the best matching offer wins, capped
+	 * at the line value. The server recalculates on sync, so a stale cached
+	 * offer can never change what a bill finally costs. */
+	function todayIso() {
+		var nowDate = new Date();
+		var month = String(nowDate.getMonth() + 1);
+		var day = String(nowDate.getDate());
+		return (
+			nowDate.getFullYear() +
+			"-" +
+			(month.length < 2 ? "0" + month : month) +
+			"-" +
+			(day.length < 2 ? "0" + day : day)
+		);
+	}
+
+	function usableOffers() {
+		var today = todayIso();
+		var branch = state.branch ? state.branch.name : null;
+		return (state.offers || []).filter(function (offer) {
+			if (offer.enabled === false) {
+				return false;
+			}
+			if (offer.branch && offer.branch !== branch) {
+				return false;
+			}
+			if (offer.valid_from && String(offer.valid_from) > today) {
+				return false;
+			}
+			if (offer.valid_to && String(offer.valid_to) < today) {
+				return false;
+			}
+			return true;
+		});
+	}
+
+	function offerMatches(offer, product, qty) {
+		if (num(offer.min_qty) && num(qty) < num(offer.min_qty)) {
+			return false;
+		}
+		if (offer.apply_on === "Product") {
+			return offer.product === product.name;
+		}
+		if (offer.apply_on === "Category") {
+			var offered = String(offer.category || "")
+				.trim()
+				.toLowerCase();
+			var actual = String(product.category || "")
+				.trim()
+				.toLowerCase();
+			return Boolean(offered) && offered === actual;
+		}
+		return false;
+	}
+
+	function bestOffer(product, qty, lineValue) {
+		var value = lineValue === undefined ? round(num(product.rate) * num(qty)) : round(lineValue);
+		var best = null;
+		var bestAmount = 0;
+		usableOffers().forEach(function (offer) {
+			if (!offerMatches(offer, product, qty)) {
+				return;
+			}
+			var amount =
+				offer.discount_type === "Percent"
+					? (value * num(offer.value)) / 100
+					: num(offer.value) * Math.abs(num(qty));
+			amount = Math.min(round(amount), Math.max(value, 0));
+			if (amount > bestAmount + 0.0005) {
+				bestAmount = amount;
+				best = offer;
+			}
+		});
+		return best ? { offer: best, discount: bestAmount, label: best.label || "Offer" } : null;
+	}
+
+	function applyLineOffers() {
+		state.cart.forEach(function (line) {
+			var product = state.productIndex.get(line.product) || { name: line.product, category: "" };
+			var lineValue = round(num(line.qty) * num(line.rate));
+			var offer = bestOffer(product, line.qty, lineValue);
+			line.discount = offer ? offer.discount : 0;
+			line.offer_label = offer ? offer.label : "";
+		});
+	}
+
 	function renderProducts() {
 		var products = filteredProducts();
 		dom["rp-products-empty"].hidden = products.length > 0;
@@ -814,6 +916,8 @@
 			.map(function (product) {
 				var qty = stockFor(product.name, state.warehouse && state.warehouse.name);
 				var stockClass = qty <= 0 ? "is-out" : qty < 5 ? "is-low" : "";
+				var offer = bestOffer(product, 1);
+				var mrp = num(product.mrp);
 				return (
 					'<button class="rp-product" data-product="' +
 					esc(product.name) +
@@ -824,6 +928,8 @@
 					'<span class="rp-muted">' +
 					esc(product.item_code || "") +
 					"</span>" +
+					(offer ? '<span class="rp-offer">' + esc(offer.label) + "</span>" : "") +
+					(mrp > num(product.rate) ? '<span class="rp-mrp">' + esc(money(mrp)) + "</span>" : "") +
 					'<span class="rp-product-meta">' +
 					'<span class="rp-product-rate">' +
 					esc(money(product.rate)) +
@@ -890,7 +996,15 @@
 						esc(money(line.rate)) +
 						" · tax " +
 						esc(num(line.tax_rate)) +
-						"%</div></div>" +
+						"%" +
+						(num(line.discount)
+							? ' · <span class="rp-line-offer">' +
+							  esc(line.offer_label || "Offer") +
+							  " −" +
+							  esc(money(line.discount)) +
+							  "</span>"
+							: "") +
+						"</div></div>" +
 						'<div class="rp-line-amount">' +
 						esc(money(lineAmount(line) + lineTax(line))) +
 						"</div>" +
@@ -989,6 +1103,7 @@
 			});
 		}
 		state.tenderedTouched = false;
+		applyLineOffers();
 		saveCart();
 		renderCart();
 	}
@@ -1009,8 +1124,188 @@
 			state.cart.splice(index, 1);
 		}
 		state.tenderedTouched = false;
+		applyLineOffers();
 		saveCart();
 		renderCart();
+	}
+
+	/* ------------------------------------------------------------------ returns */
+	function openReturn() {
+		if (state.can.create_return === false) {
+			toast("You are not allowed to take returns", "error");
+			return;
+		}
+		if (!navigator.onLine) {
+			toast("Returns need a connection to look up the bill", "error");
+			return;
+		}
+		openModal({
+			title: "Return a bill",
+			html:
+				'<label class="rp-field"><span>Bill number</span>' +
+				'<input id="rp-return-invoice" type="text" autocomplete="off" placeholder="RI-2026-00042"></label>' +
+				'<p class="rp-muted">Type the bill number to load the items that can still come back.</p>',
+			okText: "Find bill",
+			cancelText: "Cancel",
+		});
+		dom["rp-modal-ok"].onclick = function () {
+			var input = document.getElementById("rp-return-invoice");
+			var invoice = input ? input.value.trim() : "";
+			if (!invoice) {
+				toast("Type the bill number", "error");
+				return;
+			}
+			dom["rp-modal-ok"].disabled = true;
+			dom["rp-modal-ok"].textContent = "Looking…";
+			RetailSync.api("returns.get_returnable", { invoice: invoice })
+				.then(function (detail) {
+					dom["rp-modal-ok"].disabled = false;
+					dom["rp-modal-ok"].textContent = "Find bill";
+					renderReturnForm(detail);
+				})
+				.catch(function (error) {
+					dom["rp-modal-ok"].disabled = false;
+					dom["rp-modal-ok"].textContent = "Find bill";
+					toast((error && error.message) || "Could not find that bill", "error");
+				});
+		};
+		global.setTimeout(function () {
+			var input = document.getElementById("rp-return-invoice");
+			if (input) {
+				input.focus();
+			}
+		}, 40);
+	}
+
+	function renderReturnForm(detail) {
+		var rows = (detail.items || [])
+			.map(function (item, index) {
+				var available = num(item.returnable_qty);
+				return (
+					'<div class="rp-return-row' +
+					(available ? "" : " is-done") +
+					'">' +
+					'<div class="rp-return-name">' +
+					esc(item.item_name) +
+					"</div>" +
+					'<div class="rp-return-meta">' +
+					esc(money(item.rate)) +
+					" · sold " +
+					esc(item.qty) +
+					(available ? " · can return " + esc(available) : " · fully returned") +
+					"</div>" +
+					(available
+						? '<input class="rp-line-rate" type="number" min="0" max="' +
+						  available +
+						  '" step="1" value="0" data-return-index="' +
+						  index +
+						  '" aria-label="Quantity to return">'
+						: "") +
+					"</div>"
+				);
+			})
+			.join("");
+
+		dom["rp-modal-title"].textContent = "Return " + detail.invoice;
+		dom["rp-modal-body"].innerHTML =
+			'<p class="rp-muted">' +
+			esc(detail.customer_name || "Walk-in customer") +
+			" · bill " +
+			esc(money(detail.grand_total)) +
+			"</p>" +
+			'<div class="rp-return-list">' +
+			rows +
+			"</div>" +
+			'<label class="rp-field"><span>Refund by</span><select id="rp-return-mode">' +
+			'<option value="Cash">Cash refund</option>' +
+			'<option value="Card">Card refund</option>' +
+			'<option value="UPI">UPI refund</option>' +
+			'<option value="Credit">Store credit (no money out)</option>' +
+			"</select></label>" +
+			'<label class="rp-field"><span>Reason (optional)</span><input id="rp-return-reason" type="text" maxlength="140"></label>';
+
+		dom["rp-modal-ok"].disabled = false;
+		dom["rp-modal-ok"].textContent = "Refund";
+		dom["rp-modal-ok"].onclick = function () {
+			var lines = [];
+			Array.prototype.forEach.call(document.querySelectorAll("[data-return-index]"), function (input) {
+				var item = (detail.items || [])[parseInt(input.getAttribute("data-return-index"), 10)];
+				var qty = Math.min(num(input.value), item ? num(item.returnable_qty) : 0);
+				if (!item || qty <= 0) {
+					return;
+				}
+				lines.push({ product: item.product, qty: qty, rate: num(item.rate), item: item });
+			});
+			if (!lines.length) {
+				toast("Enter how many of each item come back", "error");
+				return;
+			}
+			var modeInput = document.getElementById("rp-return-mode");
+			var reasonInput = document.getElementById("rp-return-reason");
+			submitReturn(detail, lines, (modeInput && modeInput.value) || "Cash", (reasonInput && reasonInput.value) || "");
+		};
+	}
+
+	function submitReturn(detail, lines, mode, reason) {
+		dom["rp-modal-ok"].disabled = true;
+		dom["rp-modal-ok"].textContent = "Refunding…";
+		RetailSync.api("returns.create_return", {
+			invoice: detail.invoice,
+			items: JSON.stringify(
+				lines.map(function (line) {
+					return { product: line.product, qty: line.qty, rate: line.rate };
+				})
+			),
+			refund_mode: mode,
+			reason: reason,
+		})
+			.then(function (result) {
+				dom["rp-modal-ok"].disabled = false;
+				dom["rp-modal-ok"].textContent = "Refund";
+				closeModal();
+				if (!result || result.status === "failed") {
+					toast((result && result.error) || "Could not record the return", "error");
+					return;
+				}
+				toast("Credit note " + (result.invoice || "") + " recorded", "success");
+				showReturnReceipt(detail, lines, mode, result);
+			})
+			.catch(function (error) {
+				dom["rp-modal-ok"].disabled = false;
+				dom["rp-modal-ok"].textContent = "Refund";
+				toast((error && error.message) || "Could not record the return", "error");
+			});
+	}
+
+	function showReturnReceipt(detail, lines, mode, result) {
+		var net = 0;
+		var tax = 0;
+		var receiptLines = lines.map(function (line) {
+			var taxRate = num(line.item && line.item.tax_rate);
+			var value = round(num(line.rate) * num(line.qty));
+			net += value;
+			tax += round((value * taxRate) / 100);
+			return {
+				item_name: line.item.item_name,
+				qty: -Math.abs(num(line.qty)),
+				rate: num(line.rate),
+				total: -round(value + (value * taxRate) / 100),
+			};
+		});
+		var grand = result && result.grand_total !== undefined ? round(result.grand_total) : -round(net + tax);
+		var receipt = {
+			lines: receiptLines,
+			totals: { net: -round(net), discount: 0, tax: -round(tax), grand: grand },
+			mode: mode === "Credit" ? "Store credit" : mode + " refund",
+			tendered: grand,
+			change: 0,
+			customer: detail.customer_name || "",
+			gstin: detail.customer_gstin || "",
+			posting_datetime: new Date().toISOString().slice(0, 16).replace("T", " "),
+			cashier: (state.catalog && state.catalog.full_name) || "",
+			is_return: true,
+		};
+		showReceipt(receipt, { status: (result && result.status) || "created", invoice: result && result.invoice });
 	}
 
 	/* --------------------------------------------------------------- install app */
@@ -1496,6 +1791,7 @@
 			posting_datetime: serverNow(),
 			customer_name: state.customer.name || null,
 			customer_mobile: state.customer.mobile || null,
+			customer_gstin: state.customer.gstin || null,
 			items: state.cart.map(function (line) {
 				return {
 					product: line.product,
@@ -1520,6 +1816,7 @@
 			tendered: tendered,
 			change: mode === "Credit" ? 0 : round(Math.max(0, tendered - summary.grand)),
 			customer: state.customer.name,
+			gstin: state.customer.gstin,
 			posting_datetime: payload.posting_datetime,
 			cashier: (state.catalog && state.catalog.full_name) || "",
 		};
@@ -1527,10 +1824,11 @@
 		deductLocalStock(state.cart);
 
 		state.cart = [];
-		state.customer = { name: "", mobile: "" };
+		state.customer = { name: "", mobile: "", gstin: "" };
 		state.tenderedTouched = false;
 		dom["rp-customer-name"].value = "";
 		dom["rp-customer-mobile"].value = "";
+		dom["rp-customer-gstin"].value = "";
 		saveCart();
 		renderCart();
 
@@ -1603,7 +1901,11 @@
 			"</div>";
 
 		openModal({
-			title: status === "created" || status === "duplicate" ? "Bill complete" : "Bill saved",
+			title: receipt.is_return
+				? "Credit note saved"
+				: status === "created" || status === "duplicate"
+				? "Bill complete"
+				: "Bill saved",
 			html: body,
 			hideOk: true,
 			cancelText: "New bill",
@@ -1803,6 +2105,19 @@
 						color: "#6b7280",
 					});
 				}
+				if (receipt.is_return) {
+					line("CREDIT NOTE", {
+						font: fonts.big,
+						align: "center",
+						height: 30,
+						color: "#b42318",
+					});
+				} else if (receipt.gstin) {
+					line("TAX INVOICE", { font: fonts.big, align: "center", height: 30 });
+				}
+				if (branch.gstin) {
+					line("GSTIN: " + branch.gstin, { align: "center", height: 22, color: "#6b7280" });
+				}
 				if (receipt.posting_datetime) {
 					line(receipt.posting_datetime, { align: "center", height: 24, color: "#6b7280" });
 				}
@@ -1836,6 +2151,9 @@
 				if (receipt.customer) {
 					gap(10);
 					pair("Customer", receipt.customer, { font: fonts.body, height: 30 });
+				}
+				if (receipt.gstin) {
+					pair("GSTIN", receipt.gstin);
 				}
 				if (receipt.cashier) {
 					pair("Cashier", receipt.cashier);
@@ -1930,6 +2248,14 @@
 		var branch = state.branch || {};
 		var lines = [];
 		lines.push(branch.branch_name || branch.name || "Retail store");
+		if (receipt.is_return) {
+			lines.push("CREDIT NOTE");
+		} else if (receipt.gstin) {
+			lines.push("TAX INVOICE");
+		}
+		if (branch.gstin) {
+			lines.push("GSTIN: " + branch.gstin);
+		}
 		if (state.warehouse) {
 			lines.push(state.warehouse.warehouse_name || state.warehouse.name);
 		}
@@ -1953,6 +2279,9 @@
 		if (receipt.customer) {
 			lines.push("");
 			lines.push("Customer: " + receipt.customer);
+		}
+		if (receipt.gstin) {
+			lines.push("GSTIN: " + receipt.gstin);
 		}
 		if (receipt.cashier) {
 			lines.push("Cashier: " + receipt.cashier);

@@ -21,6 +21,9 @@ DocTypes, so it installs on a plain Frappe v16 bench.
 - [Permissions](#permissions)
 - [Using the POS](#using-the-pos)
 - [Using the POS on a phone](#using-the-pos-on-a-phone)
+- [Returns](#returns)
+- [Offers and MRP](#offers-and-mrp)
+- [GST](#gst)
 - [Reports](#reports)
 - [Dashboard](#dashboard)
 - [Offline mode and sync](#offline-mode-and-sync)
@@ -255,6 +258,61 @@ to Downloads instead. When the WhatsApp Cloud API is configured, the separate
 **WhatsApp bill** button still delivers the bill document straight from the
 server, and `auto_send` keeps working as before.
 
+## Returns
+
+**Return** in the current-bill header opens the return flow: type the bill
+number, the server returns the lines with how many of each can still come back,
+enter quantities, choose the refund mode and confirm.
+
+- A return is an ordinary `Retail Invoice` with `is_return` set, negative
+  quantities and `return_against` pointing at the original bill. Stock, day
+  sessions, reports and the WhatsApp document therefore work unchanged.
+- Quantities are checked against the bill minus everything already returned on
+  it, so the same item cannot be refunded twice. `Return Within Days` on the
+  branch limits how old a bill may be (0 = no limit).
+- Refunds are paid out at the rate actually charged on the original bill, even
+  if the product price has changed since.
+- Refund modes: Cash, Card, UPI, or **Store credit** (no money leaves the
+till; the negative bill is recorded as a Credit payment).
+- Returns need a connection, because the sold quantities live on the server.
+  The credit note appears in the day session and reduces expected cash.
+
+## Offers and MRP
+
+`Retail Offer` (Desk → Retail Offer) holds promotions:
+
+| Field | Meaning |
+|---|---|
+| Applies To | `Category` (free text matched against the product category) or `Product` |
+| Discount Type | `Percent` off the line, or `Amount` per unit |
+| Value / Minimum Qty | The discount and the quantity needed for it to apply |
+| Branch / Valid From / Valid To | Optional store and date window |
+
+- The best matching offer wins; offers never stack. A manual discount (rate
+  override) survives only if it is larger.
+- Offers arrive with the catalog and are applied on the device, so a phone
+  shows the offer badge on the product card and the discount in the bill
+  without a round trip. The server recalculates the same result on sync.
+- `MRP` on the product is struck through on the card when it is above the
+  selling rate, and the bill shows the discount line the customer saved.
+- Enabling or editing an offer clears the cached offer list; terminals pick it
+  up on their next catalog refresh.
+
+## GST
+
+Set `GSTIN` and `State Code` on the branch, `HSN/SAC` on products, and the
+customer can type a GSTIN in the bill (optional).
+
+- Without a customer GSTIN the bill is a plain retail bill. With one it is a
+  **Tax Invoice** and the printed/WhatsApp document shows both GSTINs.
+- Tax is split into CGST + SGST when the customer's GSTIN state code matches the
+  branch state code, and into IGST when it differs (that code also becomes the
+  place of supply). Bills without a customer GSTIN are treated as intra-state.
+- `Retail Invoice` stores `cgst_total`/`sgst_total`/`igst_total` and the item
+  rows store the split plus HSN, so the Tax Summary report shows taxable value
+  and each tax head per rate — ready for GSTR-1 style reconciliation.
+- Returns carry negative GST in the same split, which nets out in the report.
+
 ## Reports
 
 Desk → **Reports** (or the Awesome Bar by name). All reports are branch-aware:
@@ -427,7 +485,9 @@ both resolve.
 
 ## Limitations / roadmap
 
-- No purchase/receiving or returns/credit notes yet (only invoice cancel).
+- No purchase/receiving yet: stock only moves through bills and returns.
+- Offers are product/category line discounts; there is no bill-level offer,
+  coupon or buy-X-get-Y rule.
 - Stock balances are per warehouse; there is no inter-warehouse transfer UI.
 - The service worker needs the `Service-Worker-Allowed` header set by
   `utils.add_service_worker_headers`; if a reverse proxy strips it, offline

@@ -12,9 +12,11 @@
   "barcode",
   "product_name",
   "category",
+  "hsn_code",
   "column_break_1",
   "uom",
   "rate",
+  "mrp",
   "tax_rate",
   "is_active",
   "description",
@@ -52,6 +54,12 @@
    "label": "Category"
   },
   {
+   "fieldname": "hsn_code",
+   "fieldtype": "Data",
+   "label": "HSN/SAC",
+   "in_list_view": 0
+  },
+  {
    "fieldname": "column_break_1",
    "fieldtype": "Column Break"
   },
@@ -67,6 +75,12 @@
    "in_list_view": 1,
    "label": "Selling Rate",
    "reqd": 1
+  },
+  {
+   "fieldname": "mrp",
+   "fieldtype": "Currency",
+   "label": "MRP",
+   "description": "Printed maximum retail price; shown struck through when rate is lower."
   },
   {
    "default": "0",

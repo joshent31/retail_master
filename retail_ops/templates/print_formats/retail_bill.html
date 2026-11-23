@@ -47,15 +47,18 @@
 					<div class="muted">
 						{% if branch.address_line %}{{ branch.address_line }}<br>{% endif %}
 						{% if branch.city %}{{ branch.city }}{% if branch.pincode %} - {{ branch.pincode }}{% endif %}<br>{% endif %}
-						{% if branch.phone %}{{ branch.phone }}{% endif %}
+						{% if branch.phone %}{{ branch.phone }}<br>{% endif %}
+						{% if branch.gstin %}GSTIN: {{ branch.gstin }}{% endif %}
 					</div>
 				</td>
 				<td class="right">
-					<div class="shop">BILL</div>
+					<div class="shop">{% if doc.is_return %}CREDIT NOTE{% elif doc.customer_gstin %}TAX INVOICE{% else %}BILL{% endif %}</div>
 					<div>{{ doc.name }}</div>
 					<div class="muted">{{ doc.posting_datetime }}</div>
+					{% if doc.return_against %}<div class="muted">Against: {{ doc.return_against }}</div>{% endif %}
 					{% if doc.customer_name %}<div class="muted">{{ doc.customer_name }}</div>{% endif %}
 					{% if doc.customer_mobile %}<div class="muted">{{ doc.customer_mobile }}</div>{% endif %}
+					{% if doc.customer_gstin %}<div class="muted">GSTIN: {{ doc.customer_gstin }}</div>{% endif %}
 				</td>
 			</tr>
 		</table>
@@ -65,6 +68,7 @@
 		<thead>
 			<tr>
 				<th>Item</th>
+				{% if doc.tax_total %}<th class="num">HSN</th>{% endif %}
 				<th class="num">Qty</th>
 				<th class="num">Rate</th>
 				<th class="num">Amount</th>
@@ -78,6 +82,7 @@
 					{% if row.discount_amount %}<div class="muted">Discount {{ money(row.discount_amount) }}</div>{% endif %}
 					{% if row.tax_rate %}<div class="muted">Tax {{ row.tax_rate }}%</div>{% endif %}
 				</td>
+				{% if doc.tax_total %}<td class="num muted">{{ row.hsn_code or "" }}</td>{% endif %}
 				<td class="num">{{ row.qty }} {{ row.uom or "" }}</td>
 				<td class="num">{{ money(row.rate) }}</td>
 				<td class="num">{{ money(row.total_amount) }}</td>
@@ -97,7 +102,26 @@
 			<td class="value">-{{ money(doc.discount_total) }}</td>
 		</tr>
 		{% endif %}
-		{% if doc.tax_total %}
+		{% if doc.cgst_total or doc.sgst_total or doc.igst_total %}
+		{% if doc.cgst_total %}
+		<tr>
+			<td class="label">CGST</td>
+			<td class="value">{{ money(doc.cgst_total) }}</td>
+		</tr>
+		{% endif %}
+		{% if doc.sgst_total %}
+		<tr>
+			<td class="label">SGST</td>
+			<td class="value">{{ money(doc.sgst_total) }}</td>
+		</tr>
+		{% endif %}
+		{% if doc.igst_total %}
+		<tr>
+			<td class="label">IGST</td>
+			<td class="value">{{ money(doc.igst_total) }}</td>
+		</tr>
+		{% endif %}
+		{% elif doc.tax_total %}
 		<tr>
 			<td class="label">Tax</td>
 			<td class="value">{{ money(doc.tax_total) }}</td>

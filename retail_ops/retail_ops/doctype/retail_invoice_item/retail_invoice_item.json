@@ -9,12 +9,16 @@
   "item_code",
   "item_name",
   "uom",
+  "hsn_code",
   "qty",
   "rate",
   "discount_amount",
   "tax_rate",
   "amount",
   "tax_amount",
+  "cgst_amount",
+  "sgst_amount",
+  "igst_amount",
   "total_amount"
  ],
  "fields": [
@@ -47,6 +51,12 @@
    "fetch_from": "product.uom",
    "label": "UOM",
    "read_only": 1
+  },
+  {
+   "fieldname": "hsn_code",
+   "fieldtype": "Data",
+   "label": "HSN/SAC",
+   "in_list_view": 0
   },
   {
    "default": "1",
@@ -86,6 +96,24 @@
    "fieldname": "tax_amount",
    "fieldtype": "Currency",
    "label": "Tax Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cgst_amount",
+   "fieldtype": "Currency",
+   "label": "CGST",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sgst_amount",
+   "fieldtype": "Currency",
+   "label": "SGST",
+   "read_only": 1
+  },
+  {
+   "fieldname": "igst_amount",
+   "fieldtype": "Currency",
+   "label": "IGST",
    "read_only": 1
   },
   {

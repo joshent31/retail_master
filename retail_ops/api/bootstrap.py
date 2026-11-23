@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_fullname
 
+from retail_ops.offers import get_offers_for_branches
 from retail_ops.permissions import get_my_branches
 from retail_ops.sessions import get_open_session, session_snapshot
 from retail_ops.stock import get_stock_map
@@ -18,6 +19,8 @@ PRODUCT_FIELDS = [
 	"category",
 	"uom",
 	"rate",
+	"mrp",
+	"hsn_code",
 	"tax_rate",
 	"is_active",
 	"image",
@@ -62,6 +65,9 @@ def get_branch_payload(branches):
 				"allow_price_override": cint(settings.get("allow_price_override")),
 				"allow_negative_stock": cint(settings.get("allow_negative_stock")),
 				"allow_post_close_billing": cint(settings.get("allow_post_close_billing")),
+				"return_within_days": cint(settings.get("return_within_days")),
+				"gstin": settings.get("gstin") or "",
+				"state_code": settings.get("state_code") or "",
 				"receipt_footer": settings.get("receipt_footer") or "",
 				"warehouses": row.warehouses,
 			}
@@ -93,6 +99,7 @@ def build_catalog(since=None):
 	return {
 		"branches": get_branch_payload(branches),
 		"products": get_products(since),
+		"offers": get_offers_for_branches(branch_names),
 		"stock": get_stock_for_branches(branch_names),
 		"open_sessions": get_open_sessions(branch_names),
 		"catalog_version": get_catalog_version(),
@@ -120,6 +127,7 @@ def get_bootstrap():
 				"create_invoice": bool(frappe.has_permission("Retail Invoice", "create")),
 				"submit_invoice": bool(frappe.has_permission("Retail Invoice", "submit")),
 				"cancel_invoice": bool(frappe.has_permission("Retail Invoice", "cancel")),
+				"create_return": bool(frappe.has_permission("Retail Invoice", "create")),
 				"open_day": bool(frappe.has_permission("Retail Day Session", "create")),
 				"close_day": bool(frappe.has_permission("Retail Day Session", "write")),
 				"edit_catalog": bool(frappe.has_permission("Retail Product", "write")),
