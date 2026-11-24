@@ -1,0 +1,144 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:ST-{YYYY}-{#####}",
+ "creation": "2026-11-24 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "branch",
+  "from_warehouse",
+  "column_break_from",
+  "to_branch",
+  "to_warehouse",
+  "transfer_date",
+  "section_items",
+  "items",
+  "section_totals",
+  "total_qty",
+  "remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "From Branch",
+   "options": "Retail Branch",
+   "reqd": 1
+  },
+  {
+   "fieldname": "from_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "From Warehouse",
+   "options": "Retail Warehouse",
+   "reqd": 1,
+   "description": "Stock is taken out of this warehouse."
+  },
+  {
+   "fieldname": "column_break_from",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "to_branch",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "To Branch",
+   "options": "Retail Branch",
+   "reqd": 1
+  },
+  {
+   "fieldname": "to_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "To Warehouse",
+   "options": "Retail Warehouse",
+   "reqd": 1,
+   "description": "Stock is added to this warehouse."
+  },
+  {
+   "default": "Today",
+   "fieldname": "transfer_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Transfer Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_items",
+   "fieldtype": "Section Break",
+   "label": "Items Moved"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Retail Stock Transfer Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_totals",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_qty",
+   "fieldtype": "Float",
+   "label": "Total Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-11-24 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Retail Ops",
+ "name": "Retail Stock Transfer",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Retail Admin",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Retail Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "from_warehouse, to_warehouse",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "from_warehouse",
+ "track_changes": 1
+}

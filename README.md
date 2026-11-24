@@ -24,6 +24,7 @@ DocTypes, so it installs on a plain Frappe v16 bench.
 - [Returns](#returns)
 - [Offers and MRP](#offers-and-mrp)
 - [Receiving stock (GRN)](#receiving-stock-grn)
+- [Moving stock between warehouses](#moving-stock-between-warehouses)
 - [GST](#gst)
 - [Reports](#reports)
 - [Dashboard](#dashboard)
@@ -320,6 +321,23 @@ Bills only take stock out. Goods arrive through `Retail Purchase Receipt`
 - The same product twice on one receipt is rejected (combine the rows), and a
   receipt only writes to a warehouse of its own branch.
 
+## Moving stock between warehouses
+
+`Retail Stock Transfer` (Desk → Retail Stock Transfer) moves goods from one
+warehouse to another — same branch or a sister branch — without a sale:
+
+- Pick the **From** branch/warehouse and the **To** branch/warehouse, then the
+  products and quantities. Submitting takes the quantities out of the source and
+  adds them to the destination, so both shelves and both branches' Stock On Hand
+  agree straight away. Cancelling moves them back.
+- Nothing is moved while any line is short: the whole transfer is checked
+  against the source warehouse before the first quantity leaves, so a "10 of
+  this, 2 of that" move cannot half-apply.
+- Cancelling is refused once the goods have been sold at the destination; that
+  is what a return or an inter-branch adjustment is for.
+- You need access to both branches to post a transfer, and the document is
+  filed under the sending branch.
+
 ## GST
 
 Set `GSTIN` and `State Code` on the branch, `HSN/SAC` on products, and the
@@ -431,6 +449,8 @@ The terminal is offline-first at every layer:
 | Retail Invoice Payment | Payment split (child) |
 | Retail Purchase Receipt | Submittable GRN (`PR-YYYY-…`): goods received into a warehouse |
 | Retail Purchase Receipt Item | GRN line with cost rate and MRP (child) |
+| Retail Stock Transfer | Submittable move (`ST-YYYY-…`) of stock between two warehouses |
+| Retail Stock Transfer Item | Transfer line with quantity (child) |
 | Retail Stock Balance | Running quantity per product + warehouse |
 | Retail Sync Log | Audit of each offline push (counts, failures, client time) |
 
@@ -518,7 +538,8 @@ both resolve.
   landed-cost allocation, and no batch/expiry tracking.
 - Offers are product/category line discounts; there is no bill-level offer,
   coupon or buy-X-get-Y rule.
-- Stock balances are per warehouse; there is no inter-warehouse transfer UI.
+- Transfers move quantities, not costs: stock value stays at the product rate,
+  and there is no in-transit state for goods still on the road.
 - The service worker needs the `Service-Worker-Allowed` header set by
   `utils.add_service_worker_headers`; if a reverse proxy strips it, offline
   page reloads fall back to the browser cache (billing stays queued either

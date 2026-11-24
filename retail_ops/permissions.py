@@ -56,6 +56,10 @@ def purchase_receipt_query_conditions(user):
 	return _branch_condition(user, "Retail Purchase Receipt")
 
 
+def stock_transfer_query_conditions(user):
+	return _branch_condition(user, "Retail Stock Transfer")
+
+
 # ---------------------------------------------------------------------------
 # has_permission (single document level)
 # ---------------------------------------------------------------------------

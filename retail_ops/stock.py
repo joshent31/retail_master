@@ -98,7 +98,10 @@ def get_stock_levels(branch=None, warehouse=None):
 
 @frappe.whitelist()
 def rebuild_stock_balance(branch=None, warehouse=None):
-	"""Recompute balances from submitted invoices and purchase receipts. Retail Admin only."""
+	"""Recompute balances from submitted bills, purchase receipts and transfers.
+
+	Retail Admin only.
+	"""
 	if not ({"System Manager", "Retail Admin"} & set(frappe.get_roles())):
 		frappe.throw(_("Only a Retail Admin can rebuild stock"), frappe.PermissionError)
 
@@ -139,6 +142,49 @@ def rebuild_stock_balance(branch=None, warehouse=None):
 			key = (item.product, receipt.warehouse)
 			balances[key] = balances.get(key, 0) + flt(item.qty)
 
+	# a transfer changes two warehouses, so either end can be the one being
+	# rebuilt; both sides are then filtered down to the requested scope
+	transfer_scope = []
+	if branch:
+		transfer_scope += [["branch", "=", branch], ["to_branch", "=", branch]]
+	if warehouse:
+		transfer_scope += [["from_warehouse", "=", warehouse], ["to_warehouse", "=", warehouse]]
+
+	transfers = frappe.get_all(
+		"Retail Stock Transfer",
+		filters={"docstatus": 1},
+		or_filters=transfer_scope or None,
+		fields=["name", "branch", "to_branch", "from_warehouse", "to_warehouse"],
+	)
+	transfers = [
+		transfer
+		for transfer in transfers
+		if (not branch or branch in (transfer.branch, transfer.to_branch))
+		and (not warehouse or warehouse in (transfer.from_warehouse, transfer.to_warehouse))
+	]
+	for transfer in transfers:
+		items = frappe.get_all(
+			"Retail Stock Transfer Item",
+			filters={"parent": transfer.name, "parenttype": "Retail Stock Transfer"},
+			fields=["product", "qty"],
+		)
+		# only the side that belongs to the rebuild scope is recomputed; the
+		# other side's balance would otherwise be overwritten with a number
+		# that ignores its own bills and receipts
+		from_scope = (not branch or transfer.branch == branch) and (
+			not warehouse or transfer.from_warehouse == warehouse
+		)
+		to_scope = (not branch or transfer.to_branch == branch) and (
+			not warehouse or transfer.to_warehouse == warehouse
+		)
+		for item in items:
+			if from_scope:
+				out_key = (item.product, transfer.from_warehouse)
+				balances[out_key] = balances.get(out_key, 0) - flt(item.qty)
+			if to_scope:
+				in_key = (item.product, transfer.to_warehouse)
+				balances[in_key] = balances.get(in_key, 0) + flt(item.qty)
+
 	for (product, warehouse_name), qty in balances.items():
 		existing = frappe.db.get_value(
 			"Retail Stock Balance", {"product": product, "warehouse": warehouse_name}, "name"
@@ -157,4 +203,9 @@ def rebuild_stock_balance(branch=None, warehouse=None):
 				}
 			).insert(ignore_permissions=True)
 
-	return {"invoices": len(invoices), "receipts": len(receipts), "balances": len(balances)}
+	return {
+		"invoices": len(invoices),
+		"receipts": len(receipts),
+		"transfers": len(transfers),
+		"balances": len(balances),
+	}
