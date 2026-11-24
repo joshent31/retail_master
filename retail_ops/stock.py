@@ -98,7 +98,7 @@ def get_stock_levels(branch=None, warehouse=None):
 
 @frappe.whitelist()
 def rebuild_stock_balance(branch=None, warehouse=None):
-	"""Recompute balances from submitted invoices. Retail Admin only."""
+	"""Recompute balances from submitted invoices and purchase receipts. Retail Admin only."""
 	if not ({"System Manager", "Retail Admin"} & set(frappe.get_roles())):
 		frappe.throw(_("Only a Retail Admin can rebuild stock"), frappe.PermissionError)
 
@@ -120,6 +120,25 @@ def rebuild_stock_balance(branch=None, warehouse=None):
 			key = (item.product, invoice.warehouse)
 			balances[key] = balances.get(key, 0) - flt(item.qty)
 
+	receipt_filters = {"docstatus": 1}
+	if branch:
+		receipt_filters["branch"] = branch
+	if warehouse:
+		receipt_filters["warehouse"] = warehouse
+
+	receipts = frappe.get_all(
+		"Retail Purchase Receipt", filters=receipt_filters, fields=["name", "warehouse"]
+	)
+	for receipt in receipts:
+		items = frappe.get_all(
+			"Retail Purchase Receipt Item",
+			filters={"parent": receipt.name, "parenttype": "Retail Purchase Receipt"},
+			fields=["product", "qty"],
+		)
+		for item in items:
+			key = (item.product, receipt.warehouse)
+			balances[key] = balances.get(key, 0) + flt(item.qty)
+
 	for (product, warehouse_name), qty in balances.items():
 		existing = frappe.db.get_value(
 			"Retail Stock Balance", {"product": product, "warehouse": warehouse_name}, "name"
@@ -138,4 +157,4 @@ def rebuild_stock_balance(branch=None, warehouse=None):
 				}
 			).insert(ignore_permissions=True)
 
-	return {"invoices": len(invoices), "balances": len(balances)}
+	return {"invoices": len(invoices), "receipts": len(receipts), "balances": len(balances)}

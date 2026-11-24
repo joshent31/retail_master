@@ -15,6 +15,13 @@ frappe.query_reports["Retail Tax Summary"] = {
 			reqd: 1,
 		},
 		{
+			fieldname: "group_by",
+			label: __("Group By"),
+			fieldtype: "Select",
+			options: ["Tax Rate", "HSN/SAC"],
+			default: "Tax Rate",
+		},
+		{
 			fieldname: "branch",
 			label: __("Branch"),
 			fieldtype: "Link",

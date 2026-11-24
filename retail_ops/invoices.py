@@ -477,6 +477,9 @@ def create_invoice(payload, sync_source="Online"):
 	doc.offline_uuid = offline_uuid
 	doc.remarks = data.get("remarks")
 	doc.is_return = cint(data.get("is_return"))
+	# GST expects credit notes to run in their own series, not mixed in with
+	# the tax invoices they reverse.
+	doc.naming_series = "CN-.YYYY.-" if doc.is_return else "RI-.YYYY.-"
 	doc.return_against = data.get("return_against") if doc.is_return else None
 	doc.return_reason = data.get("return_reason") if doc.is_return else None
 	doc.refund_mode = data.get("refund_mode") if doc.is_return else None

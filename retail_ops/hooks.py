@@ -49,6 +49,7 @@ permission_query_conditions = {
     "Retail Day Session": "retail_ops.permissions.session_query_conditions",
     "Retail Invoice": "retail_ops.permissions.invoice_query_conditions",
     "Retail Stock Balance": "retail_ops.permissions.stock_query_conditions",
+    "Retail Purchase Receipt": "retail_ops.permissions.purchase_receipt_query_conditions",
 }
 
 has_permission = {
@@ -57,6 +58,7 @@ has_permission = {
     "Retail Day Session": "retail_ops.permissions.document_has_permission",
     "Retail Invoice": "retail_ops.permissions.document_has_permission",
     "Retail Stock Balance": "retail_ops.permissions.document_has_permission",
+    "Retail Purchase Receipt": "retail_ops.permissions.document_has_permission",
 }
 
 # ---------------------------------------------------------------------------

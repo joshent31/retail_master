@@ -23,6 +23,7 @@ DocTypes, so it installs on a plain Frappe v16 bench.
 - [Using the POS on a phone](#using-the-pos-on-a-phone)
 - [Returns](#returns)
 - [Offers and MRP](#offers-and-mrp)
+- [Receiving stock (GRN)](#receiving-stock-grn)
 - [GST](#gst)
 - [Reports](#reports)
 - [Dashboard](#dashboard)
@@ -301,6 +302,24 @@ enter quantities, choose the refund mode and confirm.
 - Enabling or editing an offer clears the cached offer list; terminals pick it
   up on their next catalog refresh.
 
+## Receiving stock (GRN)
+
+Bills only take stock out. Goods arrive through `Retail Purchase Receipt`
+(Desk → Retail Purchase Receipt), one receipt per delivery:
+
+- Branch, warehouse, supplier, supplier invoice number and date on the header;
+  one row per product with the cost rate and (optionally) the printed MRP.
+- Submitting the receipt **adds** each row's quantity to that warehouse's stock
+  balance, so the goods are immediately sellable at the POS. Stock On Hand and
+  the POS stock badges pick it up on the next refresh.
+- `Update Product MRP` (on by default) writes any MRP you enter back to the
+  product, so a price change on the pack reaches the shelf cards without a
+  separate catalog edit. The selling rate is never touched — cost is not price.
+- Cancelling a receipt takes the quantities back out, and is refused if some of
+  those goods have already been sold; the MRP it set stays as-is.
+- The same product twice on one receipt is rejected (combine the rows), and a
+  receipt only writes to a warehouse of its own branch.
+
 ## GST
 
 Set `GSTIN` and `State Code` on the branch, `HSN/SAC` on products, and the
@@ -315,8 +334,11 @@ customer can type a GSTIN in the bill (optional).
   place of supply). Bills without a customer GSTIN are treated as intra-state.
 - `Retail Invoice` stores `cgst_total`/`sgst_total`/`igst_total` and the item
   rows store the split plus HSN, so the Tax Summary report shows taxable value
-  and each tax head per rate — ready for GSTR-1 style reconciliation.
+  and each tax head per rate — ready for GSTR-1 style reconciliation. Set the
+  report's **Group By** to `HSN/SAC` for the HSN-wise table GSTR-1 asks for.
 - Returns carry negative GST in the same split, which nets out in the report.
+- Bills are numbered `RI-.YYYY.-…` and credit notes `CN-.YYYY.-…`, so the two
+  series stay separate the way GST filing expects them to.
 
 ## Reports
 
@@ -328,7 +350,7 @@ filter outside their access is refused.
 |---|---|---|
 | **Retail Sales Summary** | Daily sales per branch: bills, net, discount, tax, billed, and the cash/card/UPI/credit split | From/To date, Branch, Warehouse |
 | **Retail Item Sales** | Which products sell, how much and their share of sales | From/To date, Branch, Category |
-| **Retail Tax Summary** | Tax collected per tax rate, for filing | From/To date, Branch |
+| **Retail Tax Summary** | Tax collected per tax rate, or per HSN code for GSTR-1 | From/To date, Group By, Branch |
 | **Retail Stock On Hand** | Quantity and value of stock per product and warehouse | Branch, Warehouse, Category, Only In-Stock |
 | **Retail Shift Reconciliation** | Closing cash vs expected cash for every day session, with variance | From/To date, Branch, Status, Only Cash Differences |
 | **Retail Credit Outstanding** | Customers who still owe money, oldest dues first | As On date, Branch, Older Than (days) |
@@ -404,9 +426,11 @@ The terminal is offline-first at every layer:
 | Retail Warehouse | Stock location inside a branch |
 | Retail Product | Item master with barcode, rate, tax rate |
 | Retail Day Session | One business day for a branch + warehouse; opening and closing figures |
-| Retail Invoice | Submittable bill (`RI-.YYYY.-`) linked to session, branch, warehouse |
+| Retail Invoice | Submittable bill (`RI-.YYYY.-`) or credit note (`CN-.YYYY.-`) linked to session, branch, warehouse |
 | Retail Invoice Item | Bill line (child) |
 | Retail Invoice Payment | Payment split (child) |
+| Retail Purchase Receipt | Submittable GRN (`PR-YYYY-…`): goods received into a warehouse |
+| Retail Purchase Receipt Item | GRN line with cost rate and MRP (child) |
 | Retail Stock Balance | Running quantity per product + warehouse |
 | Retail Sync Log | Audit of each offline push (counts, failures, client time) |
 
@@ -490,7 +514,8 @@ both resolve.
 
 ## Limitations / roadmap
 
-- No purchase/receiving yet: stock only moves through bills and returns.
+- Receiving is a plain GRN: no purchase orders, supplier master, payables or
+  landed-cost allocation, and no batch/expiry tracking.
 - Offers are product/category line discounts; there is no bill-level offer,
   coupon or buy-X-get-Y rule.
 - Stock balances are per warehouse; there is no inter-warehouse transfer UI.

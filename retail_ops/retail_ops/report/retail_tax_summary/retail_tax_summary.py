@@ -1,4 +1,4 @@
-"""Tax collected per tax rate, for filing and reconciliation."""
+"""Tax collected per tax rate or per HSN code, for filing and reconciliation."""
 
 import frappe
 from frappe import _
@@ -11,8 +11,12 @@ def execute(filters=None):
 	filters = frappe._dict(filters or {})
 	to_date = getdate(filters.get("to_date") or nowdate())
 	from_date = getdate(filters.get("from_date") or add_months(to_date, -1))
+	by_hsn = (filters.get("group_by") or "Tax Rate") == "HSN/SAC"
 
-	columns = [
+	columns = []
+	if by_hsn:
+		columns.append({"fieldname": "hsn_code", "label": _("HSN/SAC"), "fieldtype": "Data", "width": 110})
+	columns += [
 		{"fieldname": "tax_rate", "label": _("Tax Rate %"), "fieldtype": "Percent", "width": 110},
 		{"fieldname": "invoices", "label": _("Bills"), "fieldtype": "Int", "width": 80},
 		{"fieldname": "qty", "label": _("Qty"), "fieldtype": "Float", "width": 100},
@@ -38,9 +42,16 @@ def execute(filters=None):
 		conditions.append("i.branch in %(branches)s")
 		values["branches"] = branches
 
+	# Only group by HSN when it is asked for: the column is not in the group
+	# by otherwise, and MySQL would reject the select.
+	select_hsn = "coalesce(it.hsn_code, '') as hsn_code," if by_hsn else ""
+	group_by = "coalesce(it.hsn_code, ''), coalesce(it.tax_rate, 0)" if by_hsn else "coalesce(it.tax_rate, 0)"
+	order_by = "hsn_code asc, tax_rate asc" if by_hsn else "tax_rate asc"
+
 	data = frappe.db.sql(
 		f"""
 		select
+			{select_hsn}
 			coalesce(it.tax_rate, 0) as tax_rate,
 			count(distinct i.name) as invoices,
 			sum(it.qty) as qty,
@@ -53,8 +64,8 @@ def execute(filters=None):
 		from `tabRetail Invoice Item` it
 		inner join `tabRetail Invoice` i on i.name = it.parent
 		where {" and ".join(conditions)}
-		group by coalesce(it.tax_rate, 0)
-		order by tax_rate asc
+		group by {group_by}
+		order by {order_by}
 		""",
 		values,
 		as_dict=True,
