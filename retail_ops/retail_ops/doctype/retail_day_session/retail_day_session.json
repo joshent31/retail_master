@@ -25,6 +25,7 @@
   "card_sales",
   "upi_sales",
   "credit_sales",
+  "due_collected",
   "column_break_totals",
   "tax_total",
   "discount_total",
@@ -159,6 +160,13 @@
    "fieldname": "credit_sales",
    "fieldtype": "Currency",
    "label": "Credit (Unpaid)",
+   "read_only": 1
+  },
+  {
+   "description": "Money collected today for older credit bills.",
+   "fieldname": "due_collected",
+   "fieldtype": "Currency",
+   "label": "Dues Collected",
    "read_only": 1
   },
   {

@@ -53,6 +53,9 @@ permission_query_conditions = {
     "Retail Stock Transfer": "retail_ops.permissions.stock_transfer_query_conditions",
     "Retail Stock Batch": "retail_ops.permissions.stock_batch_query_conditions",
     "Retail Supplier Payment": "retail_ops.permissions.supplier_payment_query_conditions",
+    "Retail Customer Receipt": "retail_ops.permissions.customer_receipt_query_conditions",
+    "Retail Purchase Return": "retail_ops.permissions.purchase_return_query_conditions",
+    "Retail Stock Adjustment": "retail_ops.permissions.stock_adjustment_query_conditions",
 }
 
 has_permission = {
@@ -65,6 +68,9 @@ has_permission = {
     "Retail Stock Transfer": "retail_ops.permissions.document_has_permission",
     "Retail Stock Batch": "retail_ops.permissions.document_has_permission",
     "Retail Supplier Payment": "retail_ops.permissions.document_has_permission",
+    "Retail Customer Receipt": "retail_ops.permissions.document_has_permission",
+    "Retail Purchase Return": "retail_ops.permissions.document_has_permission",
+    "Retail Stock Adjustment": "retail_ops.permissions.document_has_permission",
 }
 
 # ---------------------------------------------------------------------------

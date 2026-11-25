@@ -502,6 +502,8 @@ def calculate_totals(doc):
 
 	paid = sum(flt(payment.amount) for payment in doc.payments if payment.mode != "Credit")
 	doc.paid_amount = money(paid)
+	# money a customer receipt collected later against this bill's credit
+	settled = flt(doc.get("collected_amount"))
 
 	if cint(doc.is_return):
 		# a refund leaves the drawer; nothing changes hands back to the customer
@@ -511,7 +513,7 @@ def calculate_totals(doc):
 			doc.outstanding_amount = 0
 			doc.status = "Paid"
 			return
-		doc.outstanding_amount = money(doc.grand_total - paid)
+		doc.outstanding_amount = money(doc.grand_total - paid - settled)
 		if abs(flt(doc.outstanding_amount)) <= 0.005:
 			doc.status = "Paid"
 		elif flt(doc.paid_amount):
@@ -521,11 +523,11 @@ def calculate_totals(doc):
 		return
 
 	doc.change_amount = money(max(0, paid - doc.grand_total))
-	doc.outstanding_amount = money(max(0, doc.grand_total - paid))
+	doc.outstanding_amount = money(max(0, doc.grand_total - paid - settled))
 
 	if doc.outstanding_amount <= 0.005:
 		doc.status = "Paid"
-	elif doc.paid_amount > 0:
+	elif doc.paid_amount > 0 or settled > 0:
 		doc.status = "Partially Paid"
 	else:
 		doc.status = "Unpaid"

@@ -1,9 +1,10 @@
 """What is still owed to each supplier.
 
-Purchases are the submitted purchase receipts (GRNs), payments are the
-submitted supplier payments; the difference is what is outstanding. A payment
-without a branch counts for every branch, which is how a central bank transfer
-is usually recorded.
+Purchases are the submitted purchase receipts (GRNs), goods sent back are the
+submitted purchase returns (debit notes) and payments are the submitted
+supplier payments; purchases minus returns minus payments is what is
+outstanding. A payment without a branch counts for every branch, which is how a
+central bank transfer is usually recorded.
 """
 
 import frappe
@@ -23,6 +24,7 @@ def execute(filters=None):
 		{"fieldname": "mobile", "label": _("Mobile"), "fieldtype": "Data", "width": 120},
 		{"fieldname": "gstin", "label": _("GSTIN"), "fieldtype": "Data", "width": 140},
 		{"fieldname": "purchases", "label": _("Goods Received"), "fieldtype": "Currency", "width": 140},
+		{"fieldname": "returns", "label": _("Returned"), "fieldtype": "Currency", "width": 130},
 		{"fieldname": "paid", "label": _("Paid"), "fieldtype": "Currency", "width": 130},
 		{"fieldname": "outstanding", "label": _("Outstanding"), "fieldtype": "Currency", "width": 140},
 		{"fieldname": "oldest_bill", "label": _("Oldest Receipt"), "fieldtype": "Date", "width": 120},
@@ -79,6 +81,27 @@ def execute(filters=None):
 	)
 	paid_by_supplier = {row.supplier: row for row in payments}
 
+	return_conditions = ["pret.docstatus = 1"]
+	return_values = {}
+	if branches is not None:
+		return_conditions.append("pret.branch in %(branches)s")
+		return_values["branches"] = branches
+	if filters.get("supplier"):
+		return_conditions.append("pret.supplier = %(supplier)s")
+		return_values["supplier"] = filters.supplier
+
+	returns = frappe.db.sql(
+		f"""
+		select pret.supplier, sum(pret.total_amount) as returned
+		from `tabRetail Purchase Return` pret
+		where {" and ".join(return_conditions)}
+		group by pret.supplier
+		""",
+		return_values,
+		as_dict=True,
+	)
+	returned_by_supplier = {row.supplier: flt(row.returned) for row in returns}
+
 	masters = {
 		row.name: row
 		for row in frappe.get_all("Retail Supplier", fields=["name", "mobile", "gstin", "payment_terms_days"])
@@ -88,7 +111,8 @@ def execute(filters=None):
 	rows = []
 	for row in purchases:
 		payment = paid_by_supplier.get(row.supplier)
-		outstanding = flt(row.purchases) - flt(payment.paid if payment else 0)
+		returned = returned_by_supplier.get(row.supplier, 0)
+		outstanding = flt(row.purchases) - returned - flt(payment.paid if payment else 0)
 		if only_outstanding and outstanding <= 0.005:
 			continue
 
@@ -104,6 +128,7 @@ def execute(filters=None):
 				"mobile": master.get("mobile") or "",
 				"gstin": master.get("gstin") or "",
 				"purchases": flt(row.purchases),
+				"returns": returned,
 				"paid": flt(payment.paid if payment else 0),
 				"outstanding": outstanding,
 				"oldest_bill": oldest,

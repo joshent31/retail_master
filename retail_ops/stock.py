@@ -129,10 +129,13 @@ def consume_batches(product, warehouse, qty, allow_negative=True):
 		remaining = flt(remaining - take)
 
 	if remaining > 0.000001:
-		# stock entered before batches were tracked, or a branch that sells
-		# into negative: keep the batch totals adding up to the warehouse
+		# Stock entered before batches were tracked, or a branch that sells
+		# into negative. The warehouse balance is the authority and the caller
+		# has already enforced the branch's negative-stock rule, so the bucket
+		# is allowed to go negative rather than blocking a movement whose
+		# balance is fine.
 		add_batch_qty(
-			product, warehouse, DEFAULT_BATCH, None, -remaining, allow_negative=allow_negative
+			product, warehouse, DEFAULT_BATCH, None, -remaining, allow_negative=True
 		)
 		taken.append({"batch_no": DEFAULT_BATCH, "expiry_date": None, "qty": remaining})
 	return taken
@@ -201,9 +204,10 @@ def get_stock_levels(branch=None, warehouse=None):
 
 @frappe.whitelist()
 def rebuild_stock_balance(branch=None, warehouse=None):
-	"""Recompute balances from submitted bills, purchase receipts and transfers.
+	"""Recompute balances from every submitted stock document.
 
-	Retail Admin only.
+	Bills, receipts, purchase returns, stock adjustments and transfers all move
+	the balance, so all of them are replayed here. Retail Admin only.
 	"""
 	if not ({"System Manager", "Retail Admin"} & set(frappe.get_roles())):
 		frappe.throw(_("Only a Retail Admin can rebuild stock"), frappe.PermissionError)
@@ -243,6 +247,46 @@ def rebuild_stock_balance(branch=None, warehouse=None):
 		)
 		for item in items:
 			key = (item.product, receipt.warehouse)
+			balances[key] = balances.get(key, 0) + flt(item.qty)
+
+	# goods that went back to the supplier left the warehouse like a sale
+	purchase_return_filters = {"docstatus": 1}
+	if branch:
+		purchase_return_filters["branch"] = branch
+	if warehouse:
+		purchase_return_filters["warehouse"] = warehouse
+
+	purchase_returns = frappe.get_all(
+		"Retail Purchase Return", filters=purchase_return_filters, fields=["name", "warehouse"]
+	)
+	for purchase_return in purchase_returns:
+		items = frappe.get_all(
+			"Retail Purchase Return Item",
+			filters={"parent": purchase_return.name, "parenttype": "Retail Purchase Return"},
+			fields=["product", "qty"],
+		)
+		for item in items:
+			key = (item.product, purchase_return.warehouse)
+			balances[key] = balances.get(key, 0) - flt(item.qty)
+
+	# an adjustment is signed, so it is added without a direction of its own
+	adjustment_filters = {"docstatus": 1}
+	if branch:
+		adjustment_filters["branch"] = branch
+	if warehouse:
+		adjustment_filters["warehouse"] = warehouse
+
+	adjustments = frappe.get_all(
+		"Retail Stock Adjustment", filters=adjustment_filters, fields=["name", "warehouse"]
+	)
+	for adjustment in adjustments:
+		items = frappe.get_all(
+			"Retail Stock Adjustment Item",
+			filters={"parent": adjustment.name, "parenttype": "Retail Stock Adjustment"},
+			fields=["product", "qty"],
+		)
+		for item in items:
+			key = (item.product, adjustment.warehouse)
 			balances[key] = balances.get(key, 0) + flt(item.qty)
 
 	# a transfer changes two warehouses, so either end can be the one being
@@ -309,6 +353,8 @@ def rebuild_stock_balance(branch=None, warehouse=None):
 	return {
 		"invoices": len(invoices),
 		"receipts": len(receipts),
+		"purchase_returns": len(purchase_returns),
+		"adjustments": len(adjustments),
 		"transfers": len(transfers),
 		"balances": len(balances),
 	}

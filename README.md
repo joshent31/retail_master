@@ -23,10 +23,13 @@ DocTypes, so it installs on a plain Frappe v16 bench.
 - [Using the POS on a phone](#using-the-pos-on-a-phone)
 - [Returns](#returns)
 - [Customers and loyalty points](#customers-and-loyalty-points)
+- [Collecting a credit due](#collecting-a-credit-due)
 - [Offers and MRP](#offers-and-mrp)
 - [Receiving stock (GRN)](#receiving-stock-grn)
 - [Suppliers and payables](#suppliers-and-payables)
+- [Returning goods to a supplier (debit note)](#returning-goods-to-a-supplier-debit-note)
 - [Moving stock between warehouses](#moving-stock-between-warehouses)
+- [Stock adjustments (wastage, expiry, physical count)](#stock-adjustments-wastage-expiry-physical-count)
 - [Batches and expiry](#batches-and-expiry)
 - [Price labels](#price-labels)
 - [GST](#gst)
@@ -63,8 +66,13 @@ DocTypes, so it installs on a plain Frappe v16 bench.
   first-expiring-first-out issuing.
 - **Customers and loyalty** — a customer is found by mobile at the counter,
   earns points on every bill and can pay part of the next one with them.
-- **Suppliers and payables** — receipts post against a supplier master and what
-  is still owed is one report away.
+- **Credit dues** — a bill left unpaid becomes a due; a customer receipt settles
+  it oldest first, counts in the day's cash and clears it off the outstanding
+  report.
+- **Suppliers and payables** — receipts post against a supplier master, returns
+  debit it and payments settle it, so what is still owed is one report away.
+- **Stock corrections** — returns to a supplier and signed adjustment documents
+  (wastage, expiry, physical count) move stock and the batch breakdown together.
 - **GST filing** — tax invoices and credit notes, HSN-wise summary and a GSTR-1
   JSON download for the portal's offline tool.
 - **Receipts** — print-friendly receipt with branch footer and cashier name,
@@ -326,6 +334,32 @@ Loyalty is switched on per branch, with four settings:
   itself may still be queued), and a bill asking for more points than the
   customer has is rejected rather than silently discounted.
 
+## Collecting a credit due
+
+A bill paid with `Credit` (or left with no payment rows) keeps an
+`outstanding_amount`. `Retail Customer Receipt` (`CRCPT-YYYY-…`, submittable)
+is how that money comes back:
+
+- Pick the customer, how much was received and how (cash, card, UPI or bank
+  transfer, with a reference number), plus the branch and — at the counter —
+  the warehouse whose drawer took it.
+- The **server** spreads the money over the customer's open bills, oldest
+  first, and writes the split to the receipt's `allocations` table. A till
+  cannot choose which bill to settle, and a receipt for more than the customer
+  owes is refused instead of banking a credit.
+- Each settled bill moves the money into `collected_amount`, so its outstanding
+  and status (Paid / Partially Paid) are updated without touching the bill's
+  payments. Because the bill derives its outstanding as
+  `grand − paid − collected`, re-saving it later cannot undo the collection.
+- Cancelling the receipt hands the money back to the bills it settled.
+- At the POS, selecting a customer shows **Due ₹X · Collect** under their
+  details; it reads the live dues first, then takes the amount. Collecting a due
+  needs a connection.
+- Cash collected lands in the day session's **Dues Collected** and counts
+  towards the expected cash of that day, so closing the till still reconciles.
+- **Retail Credit Outstanding** is the desk view of the same thing, oldest dues
+  first.
+
 ## Offers and MRP
 
 `Retail Offer` (Desk → Retail Offer) holds promotions:
@@ -385,10 +419,31 @@ so a receipt's supplier link reads the way you type it.
   submittable): supplier, date, amount, how it was paid, reference and
   optionally the branch whose cash was used. Cancelling a payment puts the
   liability back.
-- **Retail Supplier Payables** adds it up: goods received, paid, outstanding,
-  oldest receipt, days overdue (after the supplier's payment terms) and the
-  last payment date. A payment with no branch settles the supplier for every
-  branch, which is how a central bank transfer is usually booked.
+- **Retail Supplier Payables** adds it up: goods received, returned, paid,
+  outstanding, oldest receipt, days overdue (after the supplier's payment
+  terms) and the last payment date. A payment with no branch settles the
+  supplier for every branch, which is how a central bank transfer is usually
+  booked.
+
+## Returning goods to a supplier (debit note)
+
+`Retail Purchase Return` (`PRET-YYYY-…`, submittable) sends goods back — short
+supply, wrong item, damage, expired stock:
+
+- Branch, warehouse, supplier, date and a reason, then one row per product with
+  the quantity, the cost rate and, when the goods are batched, the batch and
+  expiry. Leaving the batch blank takes the quantity off the earliest expiring
+  batch, the same way a sale would.
+- Submitting **takes** the quantities out of the warehouse; cancelling puts them
+  back. A return that would push stock (or a named batch) below zero is refused
+  unless the branch allows negative stock.
+- `Against Receipt` links the GRN it came from and the app refuses to return
+  more than that receipt brought in, counting any earlier returns against it.
+  A receipt from another supplier or branch is rejected.
+- The value is debited from the supplier: payables show goods received, returned
+  and paid, with outstanding as `received − returned − paid`.
+- A purchase return moves no GST figures — it is the stock and payable side of
+  the correction. The supplier's own debit note remains the tax document.
 
 ## Moving stock between warehouses
 
@@ -410,6 +465,27 @@ warehouse to another — same branch or a sister branch — without a sale:
   batches first and the destination receives those same batch and expiry rows,
   so the expiry report is right on both shelves. Cancelling puts each batch
   back where it came from.
+
+## Stock adjustments (wastage, expiry, physical count)
+
+Neither a bill nor a receipt explains broken stock, expired stock or a counting
+mistake. `Retail Stock Adjustment` (`SADJ-YYYY-…`, submittable) does:
+
+- Branch, warehouse, when it happened and a **Reason** (wastage, damage,
+  expiry, physical count, theft, other), then one row per product.
+- Each row carries a signed **Adjust By**: negative writes stock off, positive
+  adds it back. Entering the *difference* rather than the counted figure keeps
+  the same document usable for both a write-off and a count correction — for a
+  count of 7 where the app said 9, the adjustment is `-2`.
+- `On Hand` and `New Qty` are filled in on each row so the effect is visible
+  before submitting, and a row that would take the product (or a named batch)
+  below zero is refused unless the branch allows negative stock.
+- Named batches are adjusted on that batch; leaving the batch blank takes a
+  write-off off the earliest expiring batch and puts a gain on `NO BATCH`, so
+  the batch rows keep adding up to the warehouse balance.
+- Cancelling the adjustment applies it in reverse. Adjustments and purchase
+  returns are replayed by `rebuild_stock_balance`, so a rebuild does not wipe
+  them out.
 
 ## Batches and expiry
 
@@ -496,7 +572,7 @@ filter outside their access is refused.
 | **Retail Stock On Hand** | Quantity and value of stock per product and warehouse | Branch, Warehouse, Category, Only In-Stock |
 | **Retail Shift Reconciliation** | Closing cash vs expected cash for every day session, with variance | From/To date, Branch, Status, Only Cash Differences |
 | **Retail Credit Outstanding** | Customers who still owe money, oldest dues first | As On date, Branch, Older Than (days) |
-| **Retail Supplier Payables** | What each supplier is still owed: goods received, paid, outstanding, days overdue | Branch, Supplier, Only Outstanding |
+| **Retail Supplier Payables** | What each supplier is still owed: goods received, returned, paid, outstanding, days overdue | Branch, Supplier, Only Outstanding |
 | **Retail Batch Stock** | Quantity per batch with days to expiry, the near-expiry list | Branch, Warehouse, Product, Batch, Expiring Within (days), Hide Empty |
 
 Reports are script reports (`retail_ops/retail_ops/report/<name>/`) rather than
@@ -572,6 +648,12 @@ The terminal is offline-first at every layer:
 | Retail Customer | Customer master keyed by mobile, with loyalty balance and spend |
 | Retail Supplier | Supplier master: contact, GSTIN, payment terms |
 | Retail Supplier Payment | Submittable money paid to a supplier (`SPAY-YYYY-…`) |
+| Retail Customer Receipt | Submittable collection of a customer's credit dues (`CRCPT-YYYY-…`) |
+| Retail Customer Receipt Item | Bill settled by a receipt, with its split (child) |
+| Retail Purchase Return | Submittable debit note (`PRET-YYYY-…`): goods sent back to a supplier |
+| Retail Purchase Return Item | Return line with cost rate and batch (child) |
+| Retail Stock Adjustment | Submittable stock correction (`SADJ-YYYY-…`): wastage, expiry, physical count |
+| Retail Stock Adjustment Item | Adjustment line with signed quantity (child) |
 | Retail Day Session | One business day for a branch + warehouse; opening and closing figures |
 | Retail Invoice | Submittable bill (`RI-.YYYY.-`) or credit note (`CN-.YYYY.-`) linked to session, branch, warehouse |
 | Retail Invoice Item | Bill line (child) |
@@ -597,6 +679,8 @@ plus the normal DocType permissions.
 | `retail_ops.api.sessions.open_day` | Open (or return) the day |
 | `retail_ops.api.sessions.close_day` | Close the day, recompute totals and variance |
 | `retail_ops.api.sessions.get_day` | Session snapshot with fresh totals |
+| `retail_ops.api.customers.get_dues` | A customer's unpaid bills and total, oldest first |
+| `retail_ops.api.customers.collect_due` | Take money against those bills and settle them |
 | `retail_ops.api.sessions.list_my_days` | Recent sessions for the user's branches |
 | `retail_ops.api.sync.push` | Replay offline day operations and bills |
 | `retail_ops.api.sync.pull` | Refresh catalog + stock (optionally ``since``) |
@@ -660,7 +744,13 @@ both resolve.
   editing a customer's points by hand is deliberately not offered — points move
   only through bills so the trail stays in the ledger.
 - **Suppliers**: record a payment from `Retail Supplier Payment`; the payables
-  report recomputes itself.
+  report recomputes itself. Send goods back through `Retail Purchase Return`
+  when the supplier owes you instead.
+- **Dues**: `Retail Customer Receipt` (or **Collect** on the POS customer line)
+  settles a customer's credit bills oldest first; the credit report shrinks as
+  the money comes in.
+- **Stock corrections**: `Retail Stock Adjustment` writes off breakage or expiry
+  and fixes a physical count; `Retail Purchase Return` sends goods back.
 
 ## Customising
 
@@ -676,8 +766,14 @@ both resolve.
 ## Limitations / roadmap
 
 - Receiving is a plain GRN: no purchase orders and no landed-cost allocation.
-  Supplier payables are goods-received minus payments, not a full accounting
-  ledger (no debit notes, no advances, no TDS).
+  Supplier payables are goods-received minus returns minus payments, not a full
+  accounting ledger (no advances, no TDS).
+- A customer receipt settles bills oldest first and cannot be pointed at one
+  particular bill; there is no part-payment against a future bill, no interest
+  on overdue dues and no customer statement printout.
+- Purchase returns carry cost only, so the debit note has no GST lines of its
+  own — the supplier's tax document is still theirs. Stock adjustments likewise
+  hold no value, so a write-off does not post a stock loss to any account.
 - Offers cover product, category and bill level discounts; there is still no
   coupon-code entry, buy-X-get-Y or slab-by-quantity rule.
 - Batch issuing is automatic FEFO at billing; a cashier cannot scan a specific

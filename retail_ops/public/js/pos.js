@@ -20,7 +20,7 @@
 		warehouse: null,
 		session: null,
 		cart: [],
-		customer: { id: null, name: "", mobile: "", gstin: "", points: 0 },
+		customer: { id: null, name: "", mobile: "", gstin: "", points: 0, due: 0 },
 		loyaltyPoints: 0,
 		query: "",
 		category: "",
@@ -163,6 +163,7 @@
 			"rp-customer-mobile",
 			"rp-customer-gstin",
 			"rp-customer-points",
+			"rp-customer-due",
 			"rp-loyalty-wrap",
 			"rp-loyalty-points",
 			"rp-total-offer",
@@ -297,6 +298,7 @@
 			state.customer.gstin = this.value.trim().toUpperCase();
 			saveCart();
 		});
+		dom["rp-customer-due"].addEventListener("click", openCollectDue);
 		dom["rp-return"].addEventListener("click", openReturn);
 		dom["rp-tendered"].addEventListener("input", function () {
 			state.tenderedTouched = true;
@@ -518,12 +520,14 @@
 				if (cart && cart.branch === state.branch.name && cart.warehouse === state.warehouse.name) {
 					state.cart = Array.isArray(cart.lines) ? cart.lines : [];
 					state.customer = Object.assign(
-						{ id: null, name: "", mobile: "", gstin: "", points: 0 },
+						{ id: null, name: "", mobile: "", gstin: "", points: 0, due: 0 },
 						cart.customer || {}
 					);
-					// points are the server's: never trust a balance cached on the device
+					// points and dues are the server's: never trust a balance cached
+					// on the device
 					state.customer.id = null;
 					state.customer.points = 0;
+					state.customer.due = 0;
 				}
 				var key = sessionStoreKey();
 				if (!key) {
@@ -633,7 +637,8 @@
 			branch: state.branch ? state.branch.name : null,
 			warehouse: state.warehouse ? state.warehouse.name : null,
 			lines: state.cart,
-			customer: state.customer,
+			// the due is re-read from the server, never restored from here
+			customer: Object.assign({}, state.customer, { due: 0 }),
 		});
 	}
 
@@ -1132,9 +1137,8 @@
 				dom["rp-total-offer"].firstChild.textContent = summary.billOffer || "Bill offer";
 				dom["rp-total-offer"].lastChild.textContent = "−" + money(summary.billDiscount);
 			}
-		}
-
-		renderLoyalty(summary);
+		}			renderLoyalty(summary);
+			renderDue();
 
 		if (!state.tenderedTouched) {
 			dom["rp-tendered"].value = summary.due ? summary.due.toFixed(2) : "";
@@ -1183,6 +1187,94 @@
 		}
 	}
 
+	/* --------------------------------------------------------------------- dues */
+	function renderDue() {
+		var button = dom["rp-customer-due"];
+		if (!button) {
+			return;
+		}
+		var due = state.customer.id ? num(state.customer.due) : 0;
+		var show = due > 0.005 && state.online;
+		button.hidden = !show;
+		if (show) {
+			button.textContent = "Due " + money(due) + " \u00b7 Collect";
+		}
+	}
+
+	function openCollectDue() {
+		if (!state.branch) {
+			toast("Select a branch first", "error");
+			return;
+		}
+		if (!navigator.onLine) {
+			toast("Collecting a due needs a connection", "error");
+			return;
+		}
+		var customer = state.customer.id;
+		var due = num(state.customer.due);
+		if (!customer || due <= 0.005) {
+			return;
+		}
+
+		RetailSync.api("customers.get_dues", { customer: customer, branch: state.branch.name })
+			.then(function (outcome) {
+				var total = num(outcome && outcome.total);
+				if (total <= 0.005) {
+					state.customer.due = 0;
+					renderCart();
+					toast("Nothing left to collect");
+					return;
+				}
+				state.customer.due = total;
+				renderCart();
+				formModal({
+					title: "Collect due \u00b7 " + money(total),
+					html:
+						modalFields([
+							{ name: "amount", label: "Amount received", type: "number", value: total.toFixed(2) },
+							{ name: "mode", label: "Received by (Cash / Card / UPI / Bank)", value: "Cash" },
+							{ name: "reference_no", label: "Reference no (optional)", value: "" },
+						]),
+					okText: "Collect",
+					fields: [{ name: "amount" }, { name: "mode" }, { name: "reference_no" }],
+				}).then(function (values) {
+					if (!values) {
+						return;
+					}
+					collectDue(customer, num(values.amount), values.mode, values.reference_no);
+				});
+			})
+			.catch(function (error) {
+				toast((error && error.message) || "Could not read the dues", "error");
+			});
+	}
+
+	function collectDue(customer, amount, mode, referenceNo) {
+		if (!(amount > 0)) {
+			toast("Enter the amount received", "error");
+			return;
+		}
+		RetailSync.api("customers.collect_due", {
+			customer: customer,
+			amount: amount,
+			mode: mode || "Cash",
+			reference_no: referenceNo || null,
+			branch: state.branch.name,
+			warehouse: state.warehouse ? state.warehouse.name : null,
+		})
+			.then(function (result) {
+				state.customer.due = num(result && result.due);
+				renderCart();
+				toast(
+					"Collected " + money(result.amount) + " against " + (result.bills || []).length + " bill(s)",
+					"success"
+				);
+			})
+			.catch(function (error) {
+				toast((error && error.message) || "Could not collect that due", "error");
+			});
+	}
+
 	/* ----------------------------------------------------------------- customer */
 	function lookupCustomer(mobile) {
 		var value = String(mobile || "").trim();
@@ -1196,11 +1288,13 @@
 					// not a known number: the bill stays walk-in unless a name is typed
 					state.customer.id = null;
 					state.customer.points = 0;
+					state.customer.due = 0;
 					renderCart();
 					return;
 				}
 				state.customer.id = customer.name;
 				state.customer.points = num(customer.loyalty_points);
+				state.customer.due = num(customer.due);
 				if (!state.customer.name) {
 					state.customer.name = customer.customer_name;
 					dom["rp-customer-name"].value = customer.customer_name;

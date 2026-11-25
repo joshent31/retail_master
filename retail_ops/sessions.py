@@ -67,6 +67,23 @@ def get_session_totals(session_name):
 	)
 	by_mode = {row.mode: flt(row.amount) for row in payments}
 
+	# Money a customer hands over for an older credit bill lands in the same
+	# drawer, so it has to count towards the expected cash of the day.
+	due_cash = 0
+	due_total = 0
+	if frappe.db.table_exists("Retail Customer Receipt"):
+		dues = frappe.db.sql(
+			"""select
+				sum(case when r.mode = 'Cash' then r.amount else 0 end) as cash,
+				sum(r.amount) as total
+			from `tabRetail Customer Receipt` r
+			where r.day_session = %(session)s and r.docstatus = 1""",
+			{"session": session_name},
+			as_dict=True,
+		)
+		due_cash = flt(dues[0].cash) if dues else 0
+		due_total = flt(dues[0].total) if dues else 0
+
 	return {
 		"invoice_count": len(invoices),
 		"sales_total": money(sum(flt(row.grand_total) for row in invoices)),
@@ -76,6 +93,8 @@ def get_session_totals(session_name):
 		"card_sales": money(by_mode.get("Card", 0)),
 		"upi_sales": money(by_mode.get("UPI", 0)),
 		"credit_sales": money(by_mode.get("Credit", 0)),
+		"due_collected": money(due_total),
+		"due_cash": money(due_cash),
 		"change_total": money(sum(flt(row.change_amount) for row in invoices)),
 	}
 
@@ -83,9 +102,14 @@ def get_session_totals(session_name):
 def update_session_totals(session_name):
 	doc = frappe.get_doc("Retail Day Session", session_name)
 	totals = get_session_totals(session_name)
+	# cash from dues has no column of its own on the session, only in expected cash
+	due_cash = flt(totals.pop("due_cash", 0))
 	doc.update(totals)
 	doc.expected_cash = money(
-		flt(doc.opening_float) + flt(totals["cash_sales"]) - flt(totals["change_total"])
+		flt(doc.opening_float)
+		+ flt(totals["cash_sales"])
+		+ due_cash
+		- flt(totals["change_total"])
 	)
 	if cint(doc.status == CLOSED) or doc.closing_cash is not None:
 		doc.variance = money(flt(doc.closing_cash) - flt(doc.expected_cash))

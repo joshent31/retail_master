@@ -68,6 +68,18 @@ def supplier_payment_query_conditions(user):
 	return _branch_condition(user, "Retail Supplier Payment")
 
 
+def customer_receipt_query_conditions(user):
+	return _branch_condition(user, "Retail Customer Receipt")
+
+
+def purchase_return_query_conditions(user):
+	return _branch_condition(user, "Retail Purchase Return")
+
+
+def stock_adjustment_query_conditions(user):
+	return _branch_condition(user, "Retail Stock Adjustment")
+
+
 # ---------------------------------------------------------------------------
 # has_permission (single document level)
 # ---------------------------------------------------------------------------

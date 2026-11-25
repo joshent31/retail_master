@@ -42,6 +42,7 @@
   "column_break_totals",
   "grand_total",
   "paid_amount",
+  "collected_amount",
   "change_amount",
   "outstanding_amount",
   "loyalty_points_used",
@@ -295,6 +296,13 @@
    "fieldname": "paid_amount",
    "fieldtype": "Currency",
    "label": "Paid",
+   "read_only": 1
+  },
+  {
+   "description": "Money collected later against this bill's credit, through a customer receipt.",
+   "fieldname": "collected_amount",
+   "fieldtype": "Currency",
+   "label": "Collected Later",
    "read_only": 1
   },
   {

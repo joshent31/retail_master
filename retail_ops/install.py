@@ -50,6 +50,11 @@ def ensure_unique_indexes():
 	)
 	_add_index("tabRetail Invoice", "idx_invoice_day_session", "day_session")
 	_add_index("tabRetail Supplier Payment", "idx_supplier_payment_supplier", "supplier")
+	_add_index(
+		"tabRetail Customer Receipt", "idx_customer_receipt_customer", "customer, posting_datetime"
+	)
+	_add_index("tabRetail Purchase Return", "idx_purchase_return_supplier", "supplier")
+	_add_index("tabRetail Stock Adjustment", "idx_stock_adjustment_warehouse", "warehouse")
 
 
 def _add_index(table, index_name, columns, unique=False):

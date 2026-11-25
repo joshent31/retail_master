@@ -409,6 +409,14 @@ button.rp-pill {
 	text-transform: uppercase;
 }
 
+/* "Due 1,250 · Collect" sits under the customer fields, across both columns */
+#rp-customer-due {
+	grid-column: 1 / -1;
+	justify-self: start;
+	font-size: 12px;
+	color: var(--rp-danger, #b42318);
+}
+
 .rp-product .rp-mrp {
 	align-self: flex-start;
 }
