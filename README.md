@@ -22,10 +22,15 @@ DocTypes, so it installs on a plain Frappe v16 bench.
 - [Using the POS](#using-the-pos)
 - [Using the POS on a phone](#using-the-pos-on-a-phone)
 - [Returns](#returns)
+- [Customers and loyalty points](#customers-and-loyalty-points)
 - [Offers and MRP](#offers-and-mrp)
 - [Receiving stock (GRN)](#receiving-stock-grn)
+- [Suppliers and payables](#suppliers-and-payables)
 - [Moving stock between warehouses](#moving-stock-between-warehouses)
+- [Batches and expiry](#batches-and-expiry)
+- [Price labels](#price-labels)
 - [GST](#gst)
+- [Filing GSTR-1](#filing-gstr-1)
 - [Reports](#reports)
 - [Dashboard](#dashboard)
 - [Offline mode and sync](#offline-mode-and-sync)
@@ -54,8 +59,18 @@ DocTypes, so it installs on a plain Frappe v16 bench.
 - **Price safety** — server-side recalculation of every line and total; price
   override is a per-branch switch.
 - **Stock** — per-warehouse running balance updated on submit/cancel, with an
-  optional "no negative stock" rule per branch.
-- **Receipts** — print-friendly receipt with branch footer and cashier name.
+  optional "no negative stock" rule per branch, batch/expiry breakdown and
+  first-expiring-first-out issuing.
+- **Customers and loyalty** — a customer is found by mobile at the counter,
+  earns points on every bill and can pay part of the next one with them.
+- **Suppliers and payables** — receipts post against a supplier master and what
+  is still owed is one report away.
+- **GST filing** — tax invoices and credit notes, HSN-wise summary and a GSTR-1
+  JSON download for the portal's offline tool.
+- **Receipts** — print-friendly receipt with branch footer and cashier name,
+  plus a printable shelf/barcode label per product.
+- **Returns without the paper slip** — a bill is found by bill number or by the
+  customer's mobile number.
 
 ## Architecture
 
@@ -263,8 +278,11 @@ server, and `auto_send` keeps working as before.
 ## Returns
 
 **Return** in the current-bill header opens the return flow: type the bill
-number, the server returns the lines with how many of each can still come back,
-enter quantities, choose the refund mode and confirm.
+number *or the customer's mobile number*, the server returns the matching bills
+(the exact bill number wins, otherwise the recent bills for that number), pick
+one, enter quantities, choose the refund mode and confirm. Each line shows how
+much can still come back, and a fully returned bill is marked so it is not
+picked by mistake.
 
 - A return is an ordinary `Retail Invoice` with `is_return` set, negative
   quantities and `return_against` pointing at the original bill. Stock, day
@@ -281,19 +299,51 @@ enter quantities, choose the refund mode and confirm.
 - Returns need a connection, because the sold quantities live on the server.
   The credit note appears in the day session and reduces expected cash.
 
+## Customers and loyalty points
+
+A bill stays a walk-in sale unless the cashier types a mobile number. Doing so
+looks the number up in `Retail Customer` (Desk → Retail Customer) and, on the
+first visit, enrols it with the name that was typed — the bill is then linked to
+that record and the points follow the customer, not the terminal.
+
+Loyalty is switched on per branch, with four settings:
+
+| Setting | Meaning |
+|---|---|
+| Enable Loyalty Points | Off by default; nothing is earned or spent while it is off |
+| Spend per Point | Bill net total needed for one point (100 = 1 point per 100) |
+| Value of One Point | Money a point takes off a bill when redeemed |
+| Max % of Bill Paid With Points | Keeps a bill from being fully free |
+
+- Points are a **payment mode** (`Loyalty`), not a discount, so the tax invoice
+  still shows what the goods cost and the GST is untouched. The cashier enters
+  how many points to use, the bill shows the remaining cash/card/UPI due and
+  the receipt prints what was settled with points.
+- Earning happens on submit, redeeming takes the balance down on submit and both
+  are reversed when the bill is cancelled. A credit note refunded in `Loyalty`
+  hands the points back instead of money.
+- The balance is always the server's: redeeming needs a connection (the bill
+  itself may still be queued), and a bill asking for more points than the
+  customer has is rejected rather than silently discounted.
+
 ## Offers and MRP
 
 `Retail Offer` (Desk → Retail Offer) holds promotions:
 
 | Field | Meaning |
 |---|---|
-| Applies To | `Category` (free text matched against the product category) or `Product` |
-| Discount Type | `Percent` off the line, or `Amount` per unit |
-| Value / Minimum Qty | The discount and the quantity needed for it to apply |
+| Applies To | `Category`, `Product`, or `Bill` for a cart-level offer |
+| Discount Type | `Percent` off, or `Amount` (per unit on a line offer, per bill on a bill offer) |
+| Value / Minimum Qty | The discount and the quantity needed for it to apply (line offers) |
+| Minimum Bill Amount | The basket total needed for a bill offer to apply |
 | Branch / Valid From / Valid To | Optional store and date window |
 
 - The best matching offer wins; offers never stack. A manual discount (rate
   override) survives only if it is larger.
+- A **Bill** offer is a trade discount, so it is shared across the lines by
+  value *before* tax: the taxable value, the GST and the GSTR-1 figures all come
+  down with it. The total is kept on the bill as `bill_discount` with the offer
+  title, so the receipt can say which offer was given.
 - Offers arrive with the catalog and are applied on the device, so a phone
   shows the offer badge on the product card and the discount in the bill
   without a round trip. The server recalculates the same result on sync.
@@ -308,8 +358,10 @@ enter quantities, choose the refund mode and confirm.
 Bills only take stock out. Goods arrive through `Retail Purchase Receipt`
 (Desk → Retail Purchase Receipt), one receipt per delivery:
 
-- Branch, warehouse, supplier, supplier invoice number and date on the header;
-  one row per product with the cost rate and (optionally) the printed MRP.
+- Branch, warehouse, supplier (picked from `Retail Supplier`), supplier
+  invoice number and date on the header; one row per product with the cost
+  rate, the printed MRP and, when the goods are batched, the batch number and
+  expiry date.
 - Submitting the receipt **adds** each row's quantity to that warehouse's stock
   balance, so the goods are immediately sellable at the POS. Stock On Hand and
   the POS stock badges pick it up on the next refresh.
@@ -320,6 +372,23 @@ Bills only take stock out. Goods arrive through `Retail Purchase Receipt`
   those goods have already been sold; the MRP it set stays as-is.
 - The same product twice on one receipt is rejected (combine the rows), and a
   receipt only writes to a warehouse of its own branch.
+
+## Suppliers and payables
+
+`Retail Supplier` (Desk → Retail Supplier) is the supplier master: name, mobile,
+email, GSTIN, address and payment terms in days. The name is the document name,
+so a receipt's supplier link reads the way you type it.
+
+- Goods are received against a supplier on the GRN; the supplier's GSTIN is
+  filled in from the master when the receipt leaves it blank.
+- Money paid is recorded with `Retail Supplier Payment` (`SPAY-YYYY-…`,
+  submittable): supplier, date, amount, how it was paid, reference and
+  optionally the branch whose cash was used. Cancelling a payment puts the
+  liability back.
+- **Retail Supplier Payables** adds it up: goods received, paid, outstanding,
+  oldest receipt, days overdue (after the supplier's payment terms) and the
+  last payment date. A payment with no branch settles the supplier for every
+  branch, which is how a central bank transfer is usually booked.
 
 ## Moving stock between warehouses
 
@@ -337,6 +406,44 @@ warehouse to another — same branch or a sister branch — without a sale:
   is what a return or an inter-branch adjustment is for.
 - You need access to both branches to post a transfer, and the document is
   filed under the sending branch.
+- Batches travel with the goods: the source hands over its earliest expiring
+  batches first and the destination receives those same batch and expiry rows,
+  so the expiry report is right on both shelves. Cancelling puts each batch
+  back where it came from.
+
+## Batches and expiry
+
+Products with a printed batch or expiry date are tracked in `Retail Stock Batch`
+(Desk → Retail Stock Batch), one row per product + warehouse + batch:
+
+- A GRN row can carry a batch number and expiry date. Leave them blank for
+  goods that are not batched — they land on a `NO BATCH` row so the batch
+  quantities still add up to the warehouse balance.
+- Billing issues **first expiring, first out**: the earliest expiry goes first,
+  the batch that supplied each line is stamped on the invoice line (read-only),
+  and a credit note puts the goods back on that batch.
+- Stock sold into negative, or stock that existed before batches were tracked,
+  falls back to the `NO BATCH` row rather than blocking the sale.
+- **Retail Batch Stock** lists quantities per batch with days to expiry and a
+  "expiring within N days" filter for the weekly near-expiry walk. Because the
+  batch rows are a breakdown of the warehouse balance, their sum should match
+  Retail Stock On Hand for the same warehouse.
+- Rebuilding stock balances (`rebuild_stock_balance`) rewrites the warehouse
+  quantities only; the batch breakdown is not reconstructed from history.
+
+## Price labels
+
+Open a product and press **Print Label** (or visit
+`/retail-label?products=<item>&copies=2`):
+
+- One 50 × 30 mm label per copy with the store name, product, selling price
+  including tax, the MRP when there is one, a **Code 39** barcode and the code
+  printed under it.
+- The barcode is drawn by the page itself, with no library and no connection,
+  so it prints on any label printer or plain paper. Barcode comes from the
+  product's barcode field, otherwise its item code.
+- Hardware that needs its own protocol (weighing scales, ESC/POS label
+  printers) still needs that integration — see the limitations below.
 
 ## GST
 
@@ -358,6 +465,23 @@ customer can type a GSTIN in the bill (optional).
 - Bills are numbered `RI-.YYYY.-…` and credit notes `CN-.YYYY.-…`, so the two
   series stay separate the way GST filing expects them to.
 
+## Filing GSTR-1
+
+The Tax Summary report has a **Download GSTR-1** button. It writes the JSON the
+GST portal's offline utility imports, for the report's date range and optional
+branch:
+
+- `b2b` for bills with a customer GSTIN, `b2cs` (rate-wise, intra/inter-state)
+  for the rest, `cdnr` and `cdnur` for credit notes, and the HSN summary.
+- The tax period (`fp`) comes from the report's To Date, and the GSTIN from the
+  branch (or the first active branch when the report covers all of them).
+- Credit notes go in with positive values, the way the form expects them, even
+  though the bill itself stores negative quantities.
+- It is a draft built from your own bills: upload it, read the portal's
+  validation messages, and correct the master data (HSN digits, state codes,
+  UQC) it complains about. The file uses `OTH` as the unit quantity code, which
+  is what a retail shop without weighed goods should declare.
+
 ## Reports
 
 Desk → **Reports** (or the Awesome Bar by name). All reports are branch-aware:
@@ -372,6 +496,8 @@ filter outside their access is refused.
 | **Retail Stock On Hand** | Quantity and value of stock per product and warehouse | Branch, Warehouse, Category, Only In-Stock |
 | **Retail Shift Reconciliation** | Closing cash vs expected cash for every day session, with variance | From/To date, Branch, Status, Only Cash Differences |
 | **Retail Credit Outstanding** | Customers who still owe money, oldest dues first | As On date, Branch, Older Than (days) |
+| **Retail Supplier Payables** | What each supplier is still owed: goods received, paid, outstanding, days overdue | Branch, Supplier, Only Outstanding |
+| **Retail Batch Stock** | Quantity per batch with days to expiry, the near-expiry list | Branch, Warehouse, Product, Batch, Expiring Within (days), Hide Empty |
 
 Reports are script reports (`retail_ops/retail_ops/report/<name>/`) rather than
 Query Reports, so they can honour branch permissions and compute columns such
@@ -442,7 +568,10 @@ The terminal is offline-first at every layer:
 |---|---|
 | Retail Branch | Store settings, currency, offline/stock/price switches |
 | Retail Warehouse | Stock location inside a branch |
-| Retail Product | Item master with barcode, rate, tax rate |
+| Retail Product | Item master with barcode, rate, tax rate, MRP |
+| Retail Customer | Customer master keyed by mobile, with loyalty balance and spend |
+| Retail Supplier | Supplier master: contact, GSTIN, payment terms |
+| Retail Supplier Payment | Submittable money paid to a supplier (`SPAY-YYYY-…`) |
 | Retail Day Session | One business day for a branch + warehouse; opening and closing figures |
 | Retail Invoice | Submittable bill (`RI-.YYYY.-`) or credit note (`CN-.YYYY.-`) linked to session, branch, warehouse |
 | Retail Invoice Item | Bill line (child) |
@@ -452,6 +581,7 @@ The terminal is offline-first at every layer:
 | Retail Stock Transfer | Submittable move (`ST-YYYY-…`) of stock between two warehouses |
 | Retail Stock Transfer Item | Transfer line with quantity (child) |
 | Retail Stock Balance | Running quantity per product + warehouse |
+| Retail Stock Batch | Quantity per product + warehouse + batch, with expiry |
 | Retail Sync Log | Audit of each offline push (counts, failures, client time) |
 
 ## API
@@ -474,6 +604,12 @@ plus the normal DocType permissions.
 | `retail_ops.permissions.grant_branch_access` | Grant a user a branch |
 | `retail_ops.permissions.revoke_branch_access` | Revoke a branch |
 | `retail_ops.api.dashboard.get_dashboard` | Number cards and chart series for the Retail Dashboard |
+| `retail_ops.api.returns.find_bills` | Bills for a return, by bill number or customer mobile |
+| `retail_ops.api.returns.get_returnable` | Bill lines with how much can still be returned |
+| `retail_ops.api.returns.create_return` | Post a credit note against a bill |
+| `retail_ops.api.customers.find_customer` | Find a customer by mobile or name, with the points balance |
+| `retail_ops.api.customers.save_customer` | Attach (or enrol) the customer on the bill |
+| `retail_ops.gstr1.get_gstr1` | Build the GSTR-1 document for a period |
 | `retail_ops.stock.get_stock_levels` | On-hand quantities |
 | `retail_ops.stock.rebuild_stock_balance` | Recompute balances from submitted bills (admin) |
 
@@ -517,9 +653,14 @@ both resolve.
   and outstanding amount; cancelling restores stock and session totals.
 - **Sync audit**: `Retail Sync Log` records each pushed batch with status
   (`Success` / `Partial` / `Failed`) and per-item messages.
-- **Stock**: `Retail Stock Balance` is read-only in Desk; use
-  `retail_ops.stock.rebuild_stock_balance` if you ever need to recompute it
-  from submitted bills.
+- **Stock**: `Retail Stock Balance` and `Retail Stock Batch` are read-only in
+  Desk; use `retail_ops.stock.rebuild_stock_balance` if you ever need to
+  recompute the warehouse quantities from submitted bills.
+- **Customers**: `Retail Customer` shows the points balance and lifetime spend;
+  editing a customer's points by hand is deliberately not offered — points move
+  only through bills so the trail stays in the ledger.
+- **Suppliers**: record a payment from `Retail Supplier Payment`; the payables
+  report recomputes itself.
 
 ## Customising
 
@@ -534,10 +675,19 @@ both resolve.
 
 ## Limitations / roadmap
 
-- Receiving is a plain GRN: no purchase orders, supplier master, payables or
-  landed-cost allocation, and no batch/expiry tracking.
-- Offers are product/category line discounts; there is no bill-level offer,
-  coupon or buy-X-get-Y rule.
+- Receiving is a plain GRN: no purchase orders and no landed-cost allocation.
+  Supplier payables are goods-received minus payments, not a full accounting
+  ledger (no debit notes, no advances, no TDS).
+- Offers cover product, category and bill level discounts; there is still no
+  coupon-code entry, buy-X-get-Y or slab-by-quantity rule.
+- Batch issuing is automatic FEFO at billing; a cashier cannot scan a specific
+  batch at the till, and expiring stock is not blocked from sale — the batch
+  report is what tells you to pull it.
+- Loyalty points are earned on the net total and redeemed as payment; there are
+  no tiers, expiry of points, or points on returns beyond handing back what the
+  credit note refunded.
+- Weighing scales and ESC/POS label printers need their own device integration;
+  the label page prints through the browser's normal print dialog.
 - Transfers move quantities, not costs: stock value stays at the product rate,
   and there is no in-transit state for goods still on the road.
 - The service worker needs the `Service-Worker-Allowed` header set by

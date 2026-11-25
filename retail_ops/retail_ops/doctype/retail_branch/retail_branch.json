@@ -27,7 +27,12 @@
   "allow_price_override",
   "allow_post_close_billing",
   "return_within_days",
-  "receipt_footer"
+  "receipt_footer",
+  "section_loyalty",
+  "loyalty_enabled",
+  "loyalty_earn_per_amount",
+  "loyalty_point_value",
+  "loyalty_max_percent"
  ],
  "fields": [
   {
@@ -147,6 +152,42 @@
    "fieldname": "receipt_footer",
    "fieldtype": "Small Text",
    "label": "Receipt Footer"
+  },
+  {
+   "fieldname": "section_loyalty",
+   "fieldtype": "Section Break",
+   "label": "Loyalty Points",
+   "description": "Points are earned on the bill total and can be paid with at the counter."
+  },
+  {
+   "default": "0",
+   "fieldname": "loyalty_enabled",
+   "fieldtype": "Check",
+   "label": "Enable Loyalty Points"
+  },
+  {
+   "default": "100",
+   "depends_on": "loyalty_enabled",
+   "description": "Spend required for one point. 100 gives one point per 100 of sales.",
+   "fieldname": "loyalty_earn_per_amount",
+   "fieldtype": "Currency",
+   "label": "Spend per Point"
+  },
+  {
+   "default": "1",
+   "depends_on": "loyalty_enabled",
+   "description": "Money one point takes off a bill when it is redeemed.",
+   "fieldname": "loyalty_point_value",
+   "fieldtype": "Currency",
+   "label": "Value of One Point"
+  },
+  {
+   "default": "50",
+   "depends_on": "loyalty_enabled",
+   "description": "Most of a bill that points may pay for, so a bill is never fully free.",
+   "fieldname": "loyalty_max_percent",
+   "fieldtype": "Percent",
+   "label": "Max % of Bill Paid With Points"
   }
  ],
  "index_web_pages_for_search": 1,

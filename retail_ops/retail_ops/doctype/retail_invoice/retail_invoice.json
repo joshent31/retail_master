@@ -11,6 +11,7 @@
   "warehouse",
   "day_session",
   "customer_name",
+  "customer",
   "customer_mobile",
   "customer_gstin",
   "column_break_meta",
@@ -29,6 +30,8 @@
   "section_totals",
   "net_total",
   "discount_total",
+  "bill_discount",
+  "bill_offer",
   "tax_total",
   "tax_type",
   "place_of_supply",
@@ -41,6 +44,8 @@
   "paid_amount",
   "change_amount",
   "outstanding_amount",
+  "loyalty_points_used",
+  "loyalty_points_earned",
   "section_extra",
   "remarks",
   "offline_uuid",
@@ -95,6 +100,13 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Customer Name"
+  },
+  {
+   "description": "Loyalty points are kept on this record; a bill is linked to it as soon as the mobile matches.",
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Retail Customer"
   },
   {
    "fieldname": "customer_mobile",
@@ -170,7 +182,7 @@
    "fieldname": "refund_mode",
    "fieldtype": "Select",
    "label": "Refund Mode",
-   "options": "\nCash\nCard\nUPI\nCredit",
+   "options": "\nCash\nCard\nUPI\nCredit\nLoyalty",
    "default": "Cash",
    "depends_on": "is_return"
   },
@@ -212,6 +224,19 @@
    "fieldname": "discount_total",
    "fieldtype": "Currency",
    "label": "Discount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bill_discount",
+   "fieldtype": "Currency",
+   "label": "Bill Offer",
+   "read_only": 1,
+   "description": "A bill level offer, spread across the lines before tax."
+  },
+  {
+   "fieldname": "bill_offer",
+   "fieldtype": "Data",
+   "label": "Bill Offer Title",
    "read_only": 1
   },
   {
@@ -282,6 +307,19 @@
    "fieldname": "outstanding_amount",
    "fieldtype": "Currency",
    "label": "Outstanding",
+   "read_only": 1
+  },
+  {
+   "description": "Points paid on this bill; negative on a credit note that refunded points.",
+   "fieldname": "loyalty_points_used",
+   "fieldtype": "Float",
+   "label": "Points Redeemed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "loyalty_points_earned",
+   "fieldtype": "Float",
+   "label": "Points Earned",
    "read_only": 1
   },
   {

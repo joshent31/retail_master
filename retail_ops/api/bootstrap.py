@@ -68,6 +68,10 @@ def get_branch_payload(branches):
 				"return_within_days": cint(settings.get("return_within_days")),
 				"gstin": settings.get("gstin") or "",
 				"state_code": settings.get("state_code") or "",
+				"loyalty_enabled": cint(settings.get("loyalty_enabled")),
+				"loyalty_earn_per_amount": flt(settings.get("loyalty_earn_per_amount")),
+				"loyalty_point_value": flt(settings.get("loyalty_point_value")),
+				"loyalty_max_percent": flt(settings.get("loyalty_max_percent")),
 				"receipt_footer": settings.get("receipt_footer") or "",
 				"warehouses": row.warehouses,
 			}
@@ -132,6 +136,7 @@ def get_bootstrap():
 				"close_day": bool(frappe.has_permission("Retail Day Session", "write")),
 				"edit_catalog": bool(frappe.has_permission("Retail Product", "write")),
 				"manage_branches": bool(frappe.has_permission("Retail Branch", "write")),
+				"manage_customers": bool(frappe.has_permission("Retail Customer", "create")),
 			},
 		}
 	)

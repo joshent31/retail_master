@@ -729,6 +729,33 @@ button.rp-pill {
 	flex: 0 0 auto;
 }
 
+/* one row per bill when a search matches several */
+.rp-pick {
+	display: block;
+	width: 100%;
+	padding: 8px 0;
+	border: 0;
+	border-bottom: 1px solid var(--rp-border);
+	background: none;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.rp-pick:hover,
+.rp-pick:focus {
+	background: var(--rp-surface-2, #f4f6f8);
+}
+
+.rp-pick.is-done {
+	opacity: 0.55;
+}
+
+.rp-pick .rp-return-name,
+.rp-pick .rp-return-meta {
+	display: block;
+}
+
 /* ------------------------------------------------------------- install prompt */
 button.rp-pill.rp-install {
 	background: #e6f4ec;

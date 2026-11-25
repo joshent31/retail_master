@@ -60,6 +60,14 @@ def stock_transfer_query_conditions(user):
 	return _branch_condition(user, "Retail Stock Transfer")
 
 
+def stock_batch_query_conditions(user):
+	return _branch_condition(user, "Retail Stock Batch")
+
+
+def supplier_payment_query_conditions(user):
+	return _branch_condition(user, "Retail Supplier Payment")
+
+
 # ---------------------------------------------------------------------------
 # has_permission (single document level)
 # ---------------------------------------------------------------------------

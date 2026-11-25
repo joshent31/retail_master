@@ -1,9 +1,12 @@
-"""Product and category offers.
+"""Product, category and bill offers.
 
-An offer is a *line* discount, so it lands in the same ``discount_amount`` the
-cashier can type by hand and every report that already reads discounts keeps
-working. When several offers match a line the largest one wins (they never
-stack), and a manual discount only survives if it is bigger than the offer.
+A product/category offer is a *line* discount, so it lands in the same
+``discount_amount`` the cashier can type by hand and every report that already
+reads discounts keeps working. A bill offer is a cart level discount: it is
+shared across the lines by value before tax (a "50 off over 1000" style offer),
+so the taxable value and the GST come down with it.
+When several offers match the largest one wins (they never stack), and a manual
+discount only survives if it is bigger than the offer.
 
 The POS gets the same rules through ``get_bootstrap`` and repeats the
 calculation locally, so the price on the card, the cart total and the server's
@@ -23,6 +26,7 @@ FIELDS = [
 	"discount_type",
 	"value",
 	"min_qty",
+	"min_amount",
 	"branch",
 	"valid_from",
 	"valid_to",
@@ -54,7 +58,13 @@ def active_offers(branch=None, on_date=None):
 	return usable
 
 
+def is_bill_offer(offer):
+	return offer.apply_on == "Bill"
+
+
 def matches(offer, product, qty):
+	if is_bill_offer(offer):
+		return False
 	if flt(qty) < flt(offer.min_qty or 0):
 		return False
 	if offer.apply_on == "Product":
@@ -86,6 +96,37 @@ def offer_discount(branch, product, qty, line_value):
 	return best
 
 
+def bill_discount_amount(offer, bill_total):
+	"""Money a bill offer takes off, capped at the bill itself."""
+	total = max(flt(bill_total), 0)
+	if offer.discount_type == "Percent":
+		amount = total * flt(offer.value) / 100.0
+	else:
+		amount = flt(offer.value)
+	return flt(min(amount, total), 2)
+
+
+def best_bill_offer(branch, bill_total, on_date=None):
+	"""Largest bill level offer that the basket qualifies for.
+
+	Returns ``{"discount": money, "title": text}``; the title is kept on the
+	bill so the receipt can say which offer was given.
+	"""
+	total = flt(bill_total)
+	best = {"discount": 0.0, "title": ""}
+	if total <= 0:
+		return best
+	for offer in active_offers(branch=branch, on_date=on_date):
+		if not is_bill_offer(offer):
+			continue
+		if total < flt(offer.min_amount or 0):
+			continue
+		amount = bill_discount_amount(offer, total)
+		if amount > best["discount"] + 0.0005:
+			best = {"discount": amount, "title": offer.title or "Bill offer"}
+	return best
+
+
 def offer_label(offer):
 	value = flt(offer.value)
 	if flt(value) == int(value):
@@ -107,6 +148,7 @@ def describe(offer):
 		"discount_type": offer.discount_type,
 		"value": flt(offer.value),
 		"min_qty": flt(offer.min_qty),
+		"min_amount": flt(offer.min_amount),
 		"valid_from": str(offer.valid_from or ""),
 		"valid_to": str(offer.valid_to or ""),
 		"label": offer_label(offer),

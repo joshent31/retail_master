@@ -11,7 +11,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt, getdate
 
-from retail_ops.stock import apply_stock_delta
+from retail_ops.stock import add_batch_qty, apply_stock_delta
 from retail_ops.utils import assert_branch_access, get_branch, get_warehouse
 
 
@@ -23,6 +23,22 @@ class RetailPurchaseReceipt(Document):
 		self.receipt_date = self.receipt_date or getdate()
 		self.supplier = (self.supplier or "").strip()
 		self.supplier_gstin = (self.supplier_gstin or "").strip().upper() or None
+
+		supplier = frappe.db.get_value(
+			"Retail Supplier", self.supplier, ["supplier_name", "gstin", "is_active"], as_dict=True
+		)
+		if not supplier:
+			frappe.throw(
+				_("Supplier {0} does not exist").format(frappe.bold(self.supplier)),
+				frappe.DoesNotExistError,
+			)
+		if not cint(supplier.is_active):
+			frappe.throw(
+				_("Supplier {0} is inactive").format(frappe.bold(supplier.supplier_name)),
+				frappe.ValidationError,
+			)
+		self.supplier = supplier.supplier_name
+		self.supplier_gstin = self.supplier_gstin or supplier.gstin
 
 		if not self.items:
 			frappe.throw(_("A receipt needs at least one item"), frappe.ValidationError)
@@ -62,6 +78,8 @@ class RetailPurchaseReceipt(Document):
 			row.item_name = product.product_name
 			row.uom = product.uom
 			row.mrp = flt(row.mrp) or None
+			row.batch_no = (row.batch_no or "").strip() or None
+			row.expiry_date = row.expiry_date or None
 			row.amount = flt(row.qty * row.rate, 2)
 			total_qty += row.qty
 			total_amount += row.amount
@@ -76,6 +94,13 @@ class RetailPurchaseReceipt(Document):
 				self.warehouse,
 				flt(row.qty),
 				remarks=_("Purchase receipt {0}").format(self.name),
+			)
+			add_batch_qty(
+				row.product,
+				self.warehouse,
+				row.batch_no,
+				row.expiry_date,
+				flt(row.qty),
 			)
 
 		if cint(self.update_mrp):
@@ -94,4 +119,12 @@ class RetailPurchaseReceipt(Document):
 				-flt(row.qty),
 				allow_negative=False,
 				remarks=_("Purchase receipt {0} cancelled").format(self.name),
+			)
+			add_batch_qty(
+				row.product,
+				self.warehouse,
+				row.batch_no,
+				row.expiry_date,
+				-flt(row.qty),
+				allow_negative=False,
 			)

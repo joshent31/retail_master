@@ -82,11 +82,13 @@
 				<input id="rp-customer-name" type="text" placeholder="Customer name (optional)" />
 				<input id="rp-customer-mobile" type="tel" placeholder="Mobile (optional)" />
 				<input id="rp-customer-gstin" type="text" placeholder="GSTIN for a tax invoice (optional)" maxlength="15" autocapitalize="characters" />
+				<div class="rp-customer-points" id="rp-customer-points" hidden></div>
 			</div>
 			<div class="rp-lines" id="rp-cart"></div>
 			<div class="rp-totals">
 				<div><span>Subtotal</span><span id="rp-total-net">0.00</span></div>
 				<div><span>Discount</span><span id="rp-total-discount">0.00</span></div>
+				<div id="rp-total-offer" hidden><span></span><span></span></div>
 				<div><span>Tax</span><span id="rp-total-tax">0.00</span></div>
 				<div class="rp-grand"><span>Total</span><span id="rp-total-grand">0.00</span></div>
 			</div>
@@ -99,6 +101,10 @@
 						<option value="UPI">UPI / Wallet</option>
 						<option value="Credit">Credit (unpaid)</option>
 					</select>
+				</label>
+				<label class="rp-field" id="rp-loyalty-wrap" hidden>
+					<span>Points to use <span class="rp-muted" id="rp-loyalty-hint"></span></span>
+					<input id="rp-loyalty-points" type="number" min="0" step="1" inputmode="numeric" value="0" />
 				</label>
 				<label class="rp-field">
 					<span>Received</span>

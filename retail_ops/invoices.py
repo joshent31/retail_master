@@ -13,7 +13,7 @@ from frappe import _
 from frappe.utils import add_days, cint, flt, get_datetime, getdate, now
 
 from retail_ops.sessions import get_open_session, update_session_totals
-from retail_ops.stock import apply_stock_delta
+from retail_ops.stock import add_batch_qty, apply_stock_delta, consume_batches
 from retail_ops.utils import (
 	as_dict,
 	assert_branch_access,
@@ -23,7 +23,9 @@ from retail_ops.utils import (
 )
 from retail_ops.whatsapp import maybe_send_after_submit
 
-PAYMENT_MODES = ("Cash", "Card", "UPI", "Credit")
+# *Loyalty* settles with the customer's points instead of money; it is a
+# payment mode rather than a discount so the tax on the bill stays untouched.
+PAYMENT_MODES = ("Cash", "Card", "UPI", "Credit", "Loyalty")
 
 # 2 digits state code + PAN + entity + Z + checksum
 GSTIN_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$")
@@ -42,6 +44,7 @@ def validate_invoice(doc, method=None):
 	assert_branch_access(doc.branch)
 	branch = get_branch(doc.branch)
 	warehouse = get_warehouse(doc.warehouse, branch=doc.branch)
+	resolve_customer(doc)
 	doc.customer_gstin = (doc.customer_gstin or "").strip().upper() or None
 	if doc.customer_gstin and not GSTIN_PATTERN.match(doc.customer_gstin):
 		frappe.throw(
@@ -73,8 +76,10 @@ def validate_invoice(doc, method=None):
 	for row in doc.items:
 		validate_item(doc, row, branch)
 
+	apply_bill_offer(doc)
 	calculate_totals(doc)
 	validate_payments(doc)
+	validate_loyalty(doc, branch)
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +103,7 @@ def validate_return(doc, branch):
 			"warehouse",
 			"posting_datetime",
 			"is_return",
+			"customer",
 			"customer_name",
 			"customer_mobile",
 			"customer_gstin",
@@ -128,6 +134,7 @@ def validate_return(doc, branch):
 		)
 
 	# keep the customer on the credit note, the cashier only picks the items
+	doc.customer = doc.customer or against.customer
 	doc.customer_name = doc.customer_name or against.customer_name
 	doc.customer_mobile = doc.customer_mobile or against.customer_mobile
 	doc.customer_gstin = doc.customer_gstin or against.customer_gstin
@@ -251,6 +258,160 @@ def validate_session(doc, branch):
 	)
 
 
+# ---------------------------------------------------------------------------
+# Customer (loyalty points live on the customer, not on the bill)
+# ---------------------------------------------------------------------------
+def resolve_customer(doc):
+	"""Link the bill to the customer master, matching on the mobile number."""
+	doc.customer_mobile = (doc.customer_mobile or "").strip() or None
+	if doc.customer:
+		row = frappe.db.get_value(
+			"Retail Customer",
+			doc.customer,
+			["customer_name", "mobile", "gstin", "is_active"],
+			as_dict=True,
+		)
+		if not row:
+			frappe.throw(
+				_("Customer {0} not found").format(frappe.bold(doc.customer)), frappe.DoesNotExistError
+			)
+		if not cint(row.is_active):
+			frappe.throw(
+				_("Customer {0} is inactive").format(frappe.bold(row.customer_name)),
+				frappe.ValidationError,
+			)
+		doc.customer_name = doc.customer_name or row.customer_name
+		doc.customer_mobile = doc.customer_mobile or row.mobile
+		doc.customer_gstin = doc.customer_gstin or row.gstin
+		return
+
+	if not doc.customer_mobile:
+		return
+
+	row = frappe.db.get_value(
+		"Retail Customer",
+		{"mobile": doc.customer_mobile},
+		["name", "customer_name", "gstin"],
+		as_dict=True,
+	)
+	if row:
+		doc.customer = row.name
+		doc.customer_name = doc.customer_name or row.customer_name
+		doc.customer_gstin = doc.customer_gstin or row.gstin
+
+
+# ---------------------------------------------------------------------------
+# Bill level offers
+# ---------------------------------------------------------------------------
+def apply_bill_offer(doc):
+	"""Spread one cart level offer across the lines, before tax.
+
+	The discount has to land on the taxable value, not only on the amount
+	payable: a bill offer is a trade discount, so the tax and the GSTR-1 taxable
+	value both have to come down with it. It is shared by line value, which is
+	the fairest split and keeps the bill's own numbers adding up.
+	"""
+	if cint(doc.is_return):
+		doc.bill_discount = 0
+		doc.bill_offer = None
+		return
+
+	# ``validate`` runs again on submit, and by then the rows already carry
+	# their share of the offer; applying it a second time would stack it.
+	if getattr(doc, "_bill_offer_applied", False):
+		return
+	doc._bill_offer_applied = True  # type: ignore[attr-defined]
+
+	from retail_ops.offers import best_bill_offer
+
+	net = money(sum(flt(row.amount) for row in doc.items))
+	offer = best_bill_offer(doc.branch, net, on_date=getdate(doc.posting_datetime or now()))
+	doc.bill_discount = money(offer["discount"])
+	doc.bill_offer = offer["title"] or None
+	if not doc.bill_discount or net <= 0:
+		return
+
+	remaining = doc.bill_discount
+	last = len(doc.items) - 1
+	for position, row in enumerate(doc.items):
+		if position == last:
+			share = remaining
+		else:
+			share = money(doc.bill_discount * flt(row.amount) / net)
+			share = min(share, flt(row.amount), remaining)
+		remaining = money(remaining - share)
+
+		row.discount_amount = money(flt(row.discount_amount) + share)
+		row.amount = money(flt(row.amount) - share)
+		row.tax_amount = money(flt(row.amount) * flt(row.tax_rate) / 100)
+		row.total_amount = money(flt(row.amount) + flt(row.tax_amount))
+		split_gst(doc, row)
+
+
+# ---------------------------------------------------------------------------
+# Loyalty points
+# ---------------------------------------------------------------------------
+def earned_points(branch, net_total):
+	per = flt(branch.get("loyalty_earn_per_amount"))
+	if per <= 0:
+		return 0
+	return float(int(flt(net_total) / per))
+
+
+def validate_loyalty(doc, branch):
+	"""Points settled at the counter (payment mode *Loyalty*).
+
+	Points pay part of the bill like cash does, so they never change the tax
+	on the tax invoice: the bill total stays what the goods cost and the points
+	settle it. A return refunds points back with a negative loyalty payment.
+	"""
+	doc.loyalty_points_used = 0
+	doc.loyalty_points_earned = 0
+
+	is_return = bool(cint(doc.is_return))
+	enabled = bool(cint(branch.get("loyalty_enabled")))
+	point_value = flt(branch.get("loyalty_point_value")) or 1
+
+	paid_with_points = sum(flt(row.amount) for row in doc.payments if row.mode == "Loyalty")
+	if paid_with_points:
+		if not enabled:
+			frappe.throw(
+				_("Loyalty points are not enabled for {0}").format(frappe.bold(doc.branch)),
+				frappe.ValidationError,
+			)
+		if not doc.customer:
+			frappe.throw(
+				_("Pick the customer before paying with points"), frappe.ValidationError
+			)
+
+		points = abs(paid_with_points) / point_value
+		if abs(points - round(points)) > 0.005:
+			frappe.throw(
+				_("Points are redeemed in whole numbers — one point is {0}").format(
+					frappe.bold(money(point_value))
+				),
+				frappe.ValidationError,
+			)
+		points = round(points)
+
+		if is_return:
+			doc.loyalty_points_used = -points
+		else:
+			cap = money(flt(doc.grand_total) * flt(branch.get("loyalty_max_percent")) / 100)
+			if flt(paid_with_points) > cap + 0.005:
+				frappe.throw(
+					_("At most {0} of this bill can be paid with points").format(
+						frappe.bold(cap)
+					),
+					frappe.ValidationError,
+				)
+			doc.loyalty_points_used = points
+
+	if enabled and doc.customer and not is_return:
+		doc.loyalty_points_earned = earned_points(branch, doc.net_total)
+
+
+
 def validate_item(doc, row, branch):
 	if not row.product:
 		frappe.throw(_("Every line needs a product"), frappe.ValidationError)
@@ -331,6 +492,7 @@ def validate_item(doc, row, branch):
 
 def calculate_totals(doc):
 	doc.net_total = money(sum(flt(row.amount) for row in doc.items))
+	# the bill offer was already spread into the row discounts
 	doc.discount_total = money(sum(flt(row.discount_amount) for row in doc.items))
 	doc.tax_total = money(sum(flt(row.tax_amount) for row in doc.items))
 	doc.cgst_total = money(sum(flt(row.cgst_amount) for row in doc.items))
@@ -403,13 +565,16 @@ def validate_payments(doc):
 # ---------------------------------------------------------------------------
 def on_invoice_submit(doc, method=None):
 	branch = get_branch(doc.branch)
+	allow_negative = bool(cint(branch.get("allow_negative_stock")))
+	move_customer_points(doc, 1)
 	for row in doc.items:
 		apply_stock_delta(
 			row.product,
 			doc.warehouse,
 			-flt(row.qty),
-			allow_negative=bool(cint(branch.get("allow_negative_stock"))),
+			allow_negative=allow_negative,
 		)
+		move_line_batches(doc, row, allow_negative=allow_negative)
 
 	doc.db_set("status", doc.status, update_modified=False)
 	update_session_totals(doc.day_session)
@@ -417,12 +582,86 @@ def on_invoice_submit(doc, method=None):
 
 
 def on_invoice_cancel(doc, method=None):
+	move_customer_points(doc, -1)
 	for row in doc.items:
 		apply_stock_delta(row.product, doc.warehouse, flt(row.qty), allow_negative=True)
+		move_line_batches(doc, row, reverse=True)
 
 	doc.db_set("status", "Cancelled", update_modified=False)
 	if doc.day_session and frappe.db.exists("Retail Day Session", doc.day_session):
 		update_session_totals(doc.day_session)
+
+
+def move_line_batches(doc, row, allow_negative=True, reverse=False):
+	"""Keep the batch breakdown of a line in step with the warehouse balance.
+
+	A sale takes the earliest expiring batch first and stamps the batch on the
+	line, so a credit note can put the goods back where they came from. The
+	warehouse balance stays authoritative: a line that was billed before batches
+	were tracked simply lands on the *no batch* bucket.
+	"""
+	qty = flt(row.qty)
+	if not qty:
+		return
+	if reverse:
+		qty = -qty
+
+	if qty > 0:
+		taken = consume_batches(row.product, doc.warehouse, qty, allow_negative=allow_negative)
+		if taken and not reverse:
+			first = taken[0]
+			frappe.db.set_value(
+				"Retail Invoice Item",
+				row.name,
+				{"batch_no": first["batch_no"], "expiry_date": first["expiry_date"]},
+				update_modified=False,
+			)
+	else:
+		add_batch_qty(
+			row.product, doc.warehouse, row.batch_no, row.expiry_date, -qty
+		)
+
+
+def move_customer_points(doc, direction=1):
+	"""Apply (or undo) the loyalty movement of a bill.
+
+	``direction`` is 1 on submit and -1 on cancel. A return carries negative
+	``loyalty_points_used``, so the same arithmetic hands the points back
+	instead of taking them.
+	"""
+	if not doc.customer:
+		return
+	if not frappe.db.exists("Retail Customer", doc.customer):
+		return
+
+	row = frappe.db.get_value(
+		"Retail Customer", doc.customer, ["loyalty_points", "total_spent", "bills"], as_dict=True
+	)
+	if not row:
+		return
+
+	delta_points = flt(doc.loyalty_points_earned) - flt(doc.loyalty_points_used)
+	points = flt(row.loyalty_points) + direction * delta_points
+	if direction > 0 and points < -0.0005:
+		frappe.throw(
+			_("{0} has {1} points, but this bill needs {2}").format(
+				frappe.bold(doc.customer), frappe.bold(flt(row.loyalty_points)), frappe.bold(-delta_points)
+			),
+			frappe.ValidationError,
+		)
+
+	bills = cint(row.bills)
+	if not cint(doc.is_return):
+		bills += direction
+
+	values = {
+		"loyalty_points": points,
+		"total_spent": flt(row.total_spent) + direction * flt(doc.grand_total),
+		"bills": max(bills, 0),
+	}
+	if direction > 0 and doc.posting_datetime:
+		values["last_visit"] = doc.posting_datetime
+	frappe.db.set_value("Retail Customer", doc.customer, values, update_modified=False)
 
 
 # ---------------------------------------------------------------------------
@@ -469,6 +708,7 @@ def create_invoice(payload, sync_source="Online"):
 			frappe.db.get_value("Retail Day Session", {"offline_uuid": session_key}, "name") or session_key
 		)
 	doc.day_session = session_key
+	doc.customer = data.get("customer")
 	doc.customer_name = data.get("customer_name")
 	doc.customer_mobile = data.get("customer_mobile")
 	doc.customer_gstin = data.get("customer_gstin")
@@ -538,10 +778,15 @@ def invoice_snapshot(doc):
 		"branch": doc.branch,
 		"warehouse": doc.warehouse,
 		"day_session": doc.day_session,
+		"customer": doc.customer,
 		"customer_name": doc.customer_name,
 		"customer_mobile": doc.customer_mobile,
 		"posting_datetime": str(doc.posting_datetime or ""),
 		"grand_total": flt(doc.grand_total),
+		"bill_discount": flt(doc.bill_discount),
+		"bill_offer": doc.bill_offer,
+		"loyalty_points_used": flt(doc.loyalty_points_used),
+		"loyalty_points_earned": flt(doc.loyalty_points_earned),
 		"paid_amount": flt(doc.paid_amount),
 		"outstanding_amount": flt(doc.outstanding_amount),
 		"change_amount": flt(doc.change_amount),

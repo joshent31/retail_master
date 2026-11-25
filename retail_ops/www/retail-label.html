@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>{{ title }}</title>
+	<style>
+		* { box-sizing: border-box; }
+		body {
+			margin: 0;
+			padding: 12px;
+			font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+			color: #111;
+			background: #f3f4f6;
+		}
+		.bar {
+			display: flex;
+			gap: 8px;
+			align-items: center;
+			margin-bottom: 14px;
+		}
+		button {
+			padding: 8px 14px;
+			border: 1px solid #1f7a5c;
+			border-radius: 6px;
+			background: #1f7a5c;
+			color: #fff;
+			font-size: 14px;
+			cursor: pointer;
+		}
+		.sheet {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+		}
+		.label {
+			width: 50mm;
+			min-height: 30mm;
+			padding: 2mm;
+			background: #fff;
+			border: 1px dashed #c7cbd1;
+			text-align: center;
+			page-break-inside: avoid;
+		}
+		.store { font-size: 8px; letter-spacing: .04em; text-transform: uppercase; color: #555; }
+		.name { font-size: 10px; font-weight: 600; line-height: 1.2; margin: 1mm 0; min-height: 6mm; }
+		.price { font-size: 15px; font-weight: 700; }
+		.mrp { font-size: 8px; color: #555; text-decoration: line-through; }
+		.barcode { display: flex; align-items: stretch; height: 12mm; justify-content: center; margin-top: 1mm; }
+		.barcode span { display: block; height: 100%; }
+		.code { font-size: 8px; letter-spacing: .12em; font-family: ui-monospace, Consolas, monospace; }
+		.muted { color: #555; font-size: 13px; }
+		@media print {
+			body { background: #fff; padding: 0; }
+			.bar { display: none; }
+			.label { border: none; }
+			@page { margin: 4mm; }
+		}
+	</style>
+</head>
+<body>
+	<div class="bar">
+		<button type="button" onclick="window.print()">Print labels</button>
+		<span class="muted">Code 39, one label per copy. Use your printer's label size, smallest margins.</span>
+	</div>
+
+	{% if error %}
+	<p class="muted">{{ error }}</p>
+	{% elif not labels %}
+	<p class="muted">No product matched.</p>
+	{% else %}
+	<div class="sheet">
+		{% for label in labels %}
+		<div class="label">
+			<div class="store">{{ store or "Retail store" }}</div>
+			<div class="name">{{ label.item_name }}</div>
+			<div class="price">{{ label.price_text }}</div>
+			{% if label.mrp_text %}<div class="mrp">MRP {{ label.mrp_text }}</div>{% endif %}
+			<div class="barcode" data-code="{{ label.code }}"></div>
+			<div class="code">{{ label.code }}</div>
+		</div>
+		{% endfor %}
+	</div>
+	{% endif %}
+
+	<script>
+		/* Code 39: every character is nine elements (bar, space, bar, ...), three
+		 * of them wide. Drawn with divs so the label prints without any library
+		 * and without a network connection. */
+		var CODE39 = {
+			"0": "000110100", "1": "100100001", "2": "001100001", "3": "101100000",
+			"4": "000110001", "5": "100110000", "6": "001110000", "7": "000100101",
+			"8": "100100100", "9": "001100100", "A": "100001001", "B": "001001001",
+			"C": "101001000", "D": "000011001", "E": "100011000", "F": "001011000",
+			"G": "000001101", "H": "100001100", "I": "001001100", "J": "000011100",
+			"K": "100000011", "L": "001000011", "M": "101000010", "N": "000010011",
+			"O": "100010010", "P": "001010010", "Q": "000000111", "R": "100000110",
+			"S": "001000110", "T": "000010110", "U": "110000001", "V": "011000001",
+			"W": "111000000", "X": "010010001", "Y": "110010000", "Z": "011010000",
+			"-": "010000101", ".": "110000100", " ": "011000100", "$": "010101000",
+			"/": "010100010", "+": "010001010", "%": "000101010", "*": "010010100"
+		};
+
+		function drawBarcode(container, value) {
+			var text = String(value || "").toUpperCase();
+			if (!text) {
+				return;
+			}
+			var narrow = 1;
+			var wide = 3;
+			var x = 0;
+			var pieces = [];
+			("^" + text + "^").split("").forEach(function (character) {
+				var key = character === "^" ? "*" : character;
+				var pattern = CODE39[key];
+				if (!pattern) {
+					return;
+				}
+				var bits = pattern.split("");
+				for (var index = 0; index < bits.length; index += 1) {
+					var width = (bits[index] === "1" ? wide : narrow) * 2;
+					var isBar = index % 2 === 0;
+					pieces.push(
+						'<span style="width:' + width + 'px;background:' + (isBar ? "#111" : "transparent") + '"></span>'
+					);
+					x += width;
+				}
+				// the gap between characters is one narrow space
+				pieces.push('<span style="width:' + narrow * 2 + 'px;background:transparent"></span>');
+			});
+			container.innerHTML = pieces.join("");
+		}
+
+		Array.prototype.forEach.call(document.querySelectorAll("[data-code]"), function (element) {
+			drawBarcode(element, element.getAttribute("data-code"));
+		});
+	</script>
+</body>
+</html>

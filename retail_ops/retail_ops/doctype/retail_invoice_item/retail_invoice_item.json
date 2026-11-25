@@ -19,7 +19,9 @@
   "cgst_amount",
   "sgst_amount",
   "igst_amount",
-  "total_amount"
+  "total_amount",
+  "batch_no",
+  "expiry_date"
  ],
  "fields": [
   {
@@ -120,6 +122,19 @@
    "fieldname": "total_amount",
    "fieldtype": "Currency",
    "label": "Total",
+   "read_only": 1
+  },
+  {
+   "description": "Filled in from the earliest expiring batch when the bill is submitted.",
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "label": "Batch No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "expiry_date",
+   "fieldtype": "Date",
+   "label": "Expiry Date",
    "read_only": 1
   }
  ],

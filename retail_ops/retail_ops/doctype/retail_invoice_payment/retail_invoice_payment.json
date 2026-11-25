@@ -16,7 +16,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Mode of Payment",
-   "options": "Cash\nCard\nUPI\nCredit",
+   "options": "Cash\nCard\nUPI\nCredit\nLoyalty",
    "reqd": 1
   },
   {

@@ -4,6 +4,12 @@ Stock is a simple running balance per (product, warehouse), updated when a
 Retail Invoice is submitted/cancelled. The balance is intentionally
 independent from ERPNext Stock Ledger Entries so the POS works without
 ERPNext installed; a custom integration can mirror it later.
+
+Batches ride along as a breakdown of the same thing: every receipt records the
+batch and expiry it brought in, a sale takes the earliest expiring batch first
+(FEFO) and remembers which batch each line came from, and a transfer carries the
+batching across with the goods. The warehouse balance stays the authority; the
+batches explain where that quantity came from.
 """
 
 import frappe
@@ -33,6 +39,103 @@ def get_stock_map(warehouse=None, branch=None):
 		fields=["product", "warehouse", "branch", "qty"],
 	)
 	return rows
+
+
+STOCK_BATCH = "Retail Stock Batch"
+DEFAULT_BATCH = "NO BATCH"
+
+
+def get_batch(product, warehouse, batch_no):
+	return frappe.db.get_value(
+		STOCK_BATCH,
+		{"product": product, "warehouse": warehouse, "batch_no": batch_no},
+		["name", "qty", "expiry_date"],
+		as_dict=True,
+	)
+
+
+def add_batch_qty(product, warehouse, batch_no, expiry_date=None, qty=0, allow_negative=True):
+	"""Add (or take) quantity on one batch of a product in a warehouse."""
+	qty = flt(qty, 6)
+	if not qty:
+		return
+	batch_no = (batch_no or "").strip() or DEFAULT_BATCH
+	row = get_batch(product, warehouse, batch_no)
+
+	if not row:
+		if qty < 0 and not allow_negative:
+			frappe.throw(
+				_("Batch {0} of {1} has no stock in {2}").format(
+					frappe.bold(batch_no), frappe.bold(product), frappe.bold(warehouse)
+				),
+				frappe.ValidationError,
+			)
+		warehouse_doc = get_warehouse(warehouse)
+		frappe.get_doc(
+			{
+				"doctype": STOCK_BATCH,
+				"product": product,
+				"item_name": frappe.db.get_value("Retail Product", product, "product_name"),
+				"warehouse": warehouse,
+				"branch": warehouse_doc.branch,
+				"batch_no": batch_no,
+				"expiry_date": expiry_date or None,
+				"qty": qty,
+			}
+		).insert(ignore_permissions=True)
+		return
+
+	new_qty = flt(row.qty) + qty
+	if new_qty < -0.000001 and not allow_negative:
+		frappe.throw(
+			_("Batch {0} of {1} in {2} has only {3} left").format(
+				frappe.bold(batch_no), frappe.bold(product), frappe.bold(warehouse), flt(row.qty)
+			),
+			frappe.ValidationError,
+		)
+
+	values = {"qty": new_qty}
+	if expiry_date and not row.expiry_date:
+		values["expiry_date"] = expiry_date
+	frappe.db.set_value(STOCK_BATCH, row.name, values, update_modified=False)
+
+
+def consume_batches(product, warehouse, qty, allow_negative=True):
+	"""Take ``qty`` off the batches, earliest expiry first.
+
+	Returns the allocation as a list of ``{batch_no, expiry_date, qty}``, which
+	the bill keeps on its line so a return can put the goods back on the same
+	batch.
+	"""
+	qty = flt(qty)
+	if qty <= 0:
+		return []
+
+	rows = frappe.get_all(
+		STOCK_BATCH,
+		filters={"product": product, "warehouse": warehouse, "qty": [">", 0]},
+		fields=["name", "batch_no", "expiry_date", "qty"],
+		order_by="ifnull(expiry_date, '9999-12-31') asc, creation asc",
+	)
+
+	remaining = qty
+	taken = []
+	for row in rows:
+		if remaining <= 0.000001:
+			break
+		take = min(flt(row.qty), remaining)
+		frappe.db.set_value(STOCK_BATCH, row.name, "qty", flt(row.qty) - take, update_modified=False)
+		taken.append({"batch_no": row.batch_no, "expiry_date": row.expiry_date, "qty": take})
+		remaining = flt(remaining - take)
+
+	if remaining > 0.000001:
+		# stock entered before batches were tracked, or a branch that sells
+		# into negative: keep the batch totals adding up to the warehouse
+		add_batch_qty(
+			product, warehouse, DEFAULT_BATCH, None, -remaining, allow_negative=allow_negative
+		)
+		taken.append({"batch_no": DEFAULT_BATCH, "expiry_date": None, "qty": remaining})
+	return taken
 
 
 def apply_stock_delta(product, warehouse, qty_delta, allow_negative=True, remarks=None):

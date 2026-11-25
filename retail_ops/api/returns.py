@@ -12,7 +12,85 @@ from frappe import _  # noqa: F401  (kept for error messages in callers)
 from frappe.utils import cint, flt
 
 from retail_ops.invoices import create_invoice, returned_qty
-from retail_ops.utils import assert_branch_access
+from retail_ops.utils import accessible_branch_names, assert_branch_access
+
+
+@frappe.whitelist()
+def find_bills(query=None, limit=25):
+	"""Bills a return may be raised against, found by bill number or mobile.
+
+	A cashier seldom has the paper slip, so the customer's phone number is
+	enough to pull up their recent bills. Only the cashier's own branches are
+	searched, and a bill whose items have all come back is marked so it cannot
+	be picked by mistake.
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please sign in to use the POS"), frappe.PermissionError)
+
+	query = (query or "").strip()
+	if not query:
+		frappe.throw(_("Type a bill number or a customer mobile"), frappe.ValidationError)
+
+	branches = accessible_branch_names()
+	if not branches:
+		return {"bills": []}
+
+	rows = frappe.db.sql(
+		"""
+		select
+			i.name,
+			i.customer_name,
+			i.customer_mobile,
+			i.branch,
+			i.warehouse,
+			i.posting_datetime,
+			i.grand_total,
+			coalesce((
+				select sum(it.qty) from `tabRetail Invoice Item` it
+				where it.parent = i.name
+			), 0) as sold_qty,
+			coalesce((
+				select -sum(r.qty) from `tabRetail Invoice Item` r
+				inner join `tabRetail Invoice` cn on cn.name = r.parent
+				where cn.return_against = i.name and cn.docstatus = 1
+			), 0) as returned_qty
+		from `tabRetail Invoice` i
+		where i.docstatus = 1
+			and i.is_return = 0
+			and i.branch in %(branches)s
+			and (
+				i.name like %(like)s
+				or i.customer_mobile like %(like)s
+				or coalesce(i.customer_name, '') like %(like)s
+			)
+		order by (i.name = %(exact)s) desc, i.posting_datetime desc
+		limit %(limit)s
+		""",
+		{
+			"branches": branches,
+			"like": "%" + query + "%",
+			"exact": query,
+			"limit": max(1, min(cint(limit) or 25, 50)),
+		},
+		as_dict=True,
+	)
+
+	bills = []
+	for row in rows:
+		remaining = flt(row.sold_qty) - flt(row.returned_qty)
+		bills.append(
+			{
+				"name": row.name,
+				"branch": row.branch,
+				"warehouse": row.warehouse,
+				"customer_name": row.customer_name,
+				"customer_mobile": row.customer_mobile,
+				"posting_datetime": str(row.posting_datetime or ""),
+				"grand_total": flt(row.grand_total),
+				"can_return": remaining > 0.0005,
+			}
+		)
+	return {"bills": bills}
 
 
 @frappe.whitelist()

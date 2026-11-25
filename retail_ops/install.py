@@ -42,7 +42,14 @@ def ensure_unique_indexes():
 	unique and the session lookup index are added here.
 	"""
 	_add_index("tabRetail Stock Balance", "uidx_stock_product_warehouse", "product, warehouse", unique=True)
+	_add_index(
+		"tabRetail Stock Batch",
+		"uidx_batch_product_warehouse_batch",
+		"product, warehouse, batch_no",
+		unique=True,
+	)
 	_add_index("tabRetail Invoice", "idx_invoice_day_session", "day_session")
+	_add_index("tabRetail Supplier Payment", "idx_supplier_payment_supplier", "supplier")
 
 
 def _add_index(table, index_name, columns, unique=False):

@@ -7,12 +7,14 @@ arrives at the destination, and cancelling a transfer puts it back where it
 came from.
 """
 
+import json
+
 import frappe
 from frappe import _  # noqa: F401  (kept for error messages in callers)
 from frappe.model.document import Document
 from frappe.utils import flt, getdate
 
-from retail_ops.stock import apply_stock_delta, get_stock
+from retail_ops.stock import add_batch_qty, apply_stock_delta, consume_batches, get_stock
 from retail_ops.utils import assert_branch_access, get_branch, get_warehouse
 
 
@@ -103,6 +105,27 @@ class RetailStockTransfer(Document):
 				remarks=_("Stock transfer {0}").format(self.name),
 			)
 
+			# the batches travel with the goods, so the destination expires them
+			# in the same order the source would have
+			taken = consume_batches(
+				row.product, self.from_warehouse, flt(row.qty), allow_negative=False
+			)
+			for part in taken:
+				add_batch_qty(
+					row.product,
+					self.to_warehouse,
+					part["batch_no"],
+					part["expiry_date"],
+					part["qty"],
+				)
+			frappe.db.set_value(
+				"Retail Stock Transfer Item",
+				row.name,
+				"batch_json",
+				json.dumps(taken),
+				update_modified=False,
+			)
+
 	def on_cancel(self):
 		# the goods may already have been sold at the destination, so the whole
 		# transfer is refused rather than moved back in part
@@ -121,3 +144,31 @@ class RetailStockTransfer(Document):
 				flt(row.qty),
 				remarks=_("Stock transfer {0} cancelled").format(self.name),
 			)
+
+			# put each batch back where it came from, using the allocation saved
+			# on submit; older transfers without one fall back to the whole line
+			for part in _saved_batches(row):
+				add_batch_qty(
+					row.product,
+					self.to_warehouse,
+					part["batch_no"],
+					part.get("expiry_date"),
+					-flt(part["qty"]),
+					allow_negative=False,
+				)
+				add_batch_qty(
+					row.product,
+					self.from_warehouse,
+					part["batch_no"],
+					part.get("expiry_date"),
+					flt(part["qty"]),
+				)
+
+
+def _saved_batches(row):
+	if row.get("batch_json"):
+		try:
+			return json.loads(row.batch_json) or []
+		except ValueError:
+			pass
+	return [{"batch_no": None, "expiry_date": None, "qty": flt(row.qty)}]

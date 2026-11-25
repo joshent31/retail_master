@@ -10,7 +10,8 @@
   "item_code",
   "item_name",
   "uom",
-  "qty"
+  "qty",
+  "batch_json"
  ],
  "fields": [
   {
@@ -51,6 +52,14 @@
    "in_list_view": 1,
    "label": "Qty",
    "reqd": 1
+  },
+  {
+   "description": "Which batches moved; used to put them back on cancel.",
+   "fieldname": "batch_json",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Batch Allocation",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,

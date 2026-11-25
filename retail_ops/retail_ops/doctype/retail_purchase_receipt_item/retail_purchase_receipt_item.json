@@ -11,6 +11,8 @@
   "item_name",
   "uom",
   "qty",
+  "batch_no",
+  "expiry_date",
   "rate",
   "amount",
   "mrp"
@@ -54,6 +56,17 @@
    "in_list_view": 1,
    "label": "Qty",
    "reqd": 1
+  },
+  {
+   "description": "Batch or lot printed on the carton. Leave blank when the goods are not batched.",
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "label": "Batch No"
+  },
+  {
+   "fieldname": "expiry_date",
+   "fieldtype": "Date",
+   "label": "Expiry Date"
   },
   {
    "fieldname": "rate",

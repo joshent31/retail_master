@@ -16,6 +16,7 @@
   "discount_type",
   "value",
   "min_qty",
+  "min_amount",
   "section_period",
   "branch",
   "valid_from",
@@ -44,7 +45,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Applies To",
-   "options": "Category\nProduct",
+   "options": "Category\nProduct\nBill",
    "reqd": 1
   },
   {
@@ -80,13 +81,22 @@
    "in_list_view": 1,
    "label": "Value",
    "reqd": 1,
-   "description": "Percent off the line, or a flat amount per unit."
+   "description": "Percent off, or a flat amount: per unit on a line offer, per bill on a bill offer."
   },
   {
    "default": "0",
+   "depends_on": "eval:doc.apply_on!='Bill'",
    "fieldname": "min_qty",
    "fieldtype": "Float",
    "label": "Minimum Qty"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.apply_on=='Bill'",
+   "description": "The offer needs at least this bill total (after line offers, before tax).",
+   "fieldname": "min_amount",
+   "fieldtype": "Currency",
+   "label": "Minimum Bill Amount"
   },
   {
    "fieldname": "section_period",

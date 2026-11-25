@@ -20,7 +20,8 @@
 		warehouse: null,
 		session: null,
 		cart: [],
-		customer: { name: "", mobile: "", gstin: "" },
+		customer: { id: null, name: "", mobile: "", gstin: "", points: 0 },
+		loyaltyPoints: 0,
 		query: "",
 		category: "",
 		tab: "products",
@@ -161,6 +162,10 @@
 			"rp-customer-name",
 			"rp-customer-mobile",
 			"rp-customer-gstin",
+			"rp-customer-points",
+			"rp-loyalty-wrap",
+			"rp-loyalty-points",
+			"rp-total-offer",
 			"rp-return",
 			"rp-total-net",
 			"rp-total-discount",
@@ -279,6 +284,14 @@
 		dom["rp-customer-mobile"].addEventListener("input", function () {
 			state.customer.mobile = this.value;
 			saveCart();
+		});
+		dom["rp-customer-mobile"].addEventListener("change", function () {
+			lookupCustomer(this.value);
+		});
+		dom["rp-loyalty-points"].addEventListener("input", function () {
+			state.loyaltyPoints = Math.max(0, Math.floor(num(this.value)));
+			state.tenderedTouched = false;
+			renderCart();
 		});
 		dom["rp-customer-gstin"].addEventListener("input", function () {
 			state.customer.gstin = this.value.trim().toUpperCase();
@@ -504,7 +517,13 @@
 				var cart = metaCache.cart;
 				if (cart && cart.branch === state.branch.name && cart.warehouse === state.warehouse.name) {
 					state.cart = Array.isArray(cart.lines) ? cart.lines : [];
-					state.customer = Object.assign({ name: "", mobile: "", gstin: "" }, cart.customer || {});
+					state.customer = Object.assign(
+						{ id: null, name: "", mobile: "", gstin: "", points: 0 },
+						cart.customer || {}
+					);
+					// points are the server's: never trust a balance cached on the device
+					state.customer.id = null;
+					state.customer.points = 0;
 				}
 				var key = sessionStoreKey();
 				if (!key) {
@@ -960,21 +979,83 @@
 		return round((lineAmount(line) * num(line.tax_rate)) / 100);
 	}
 
+	function bestBillOffer(netTotal) {
+		var total = Math.max(0, round(num(netTotal)));
+		var best = null;
+		usableOffers().forEach(function (offer) {
+			if (offer.apply_on !== "Bill") {
+				return;
+			}
+			if (total < num(offer.min_amount)) {
+				return;
+			}
+			var amount =
+				offer.discount_type === "Percent"
+					? (total * num(offer.value)) / 100
+					: num(offer.value);
+			amount = Math.min(round(amount), total);
+			if (!best || amount > best.discount + 0.0005) {
+				best = { discount: amount, label: offer.title || offer.label || "Bill offer" };
+			}
+		});
+		return best && best.discount > 0 ? best : null;
+	}
+
+	function loyaltySettings() {
+		var branch = state.branch || {};
+		return {
+			enabled: Boolean(num(branch.loyalty_enabled)),
+			value: num(branch.loyalty_point_value) || 1,
+			maxPercent: num(branch.loyalty_max_percent),
+		};
+	}
+
 	function totals() {
-		var net = 0;
+		var gross = 0;
 		var discount = 0;
+		state.cart.forEach(function (line) {
+			gross += lineAmount(line);
+			discount += num(line.discount);
+		});
+		gross = round(gross);
+
+		// A bill offer is a trade discount, so it reduces the taxable value too:
+		// the lines are scaled down together and the tax follows them.
+		var offer = bestBillOffer(gross);
+		var billDiscount = offer ? Math.min(round(offer.discount), gross) : 0;
+		var factor = gross > 0 ? (gross - billDiscount) / gross : 1;
+		var net = round(gross - billDiscount);
 		var tax = 0;
 		state.cart.forEach(function (line) {
-			net += lineAmount(line);
-			discount += num(line.discount);
-			tax += lineTax(line);
+			tax += round((lineAmount(line) * factor * num(line.tax_rate)) / 100);
 		});
-		net = round(net);
+		tax = round(tax);
+		var grand = round(net + tax);
+
+		// points settle part of the bill, they never change what the goods cost
+		var settings = loyaltySettings();
+		var loyaltyPoints = 0;
+		if (settings.enabled && state.customer.id && state.loyaltyPoints > 0 && grand > 0) {
+			var cap = Math.floor((grand * settings.maxPercent) / 100 / settings.value);
+			loyaltyPoints = Math.max(
+				0,
+				Math.min(Math.floor(state.loyaltyPoints), num(state.customer.points), cap)
+			);
+		}
+		var loyaltyAmount = round(loyaltyPoints * settings.value);
+
 		return {
+			gross: gross,
 			net: net,
-			discount: round(discount),
-			tax: round(tax),
-			grand: round(net + tax),
+			discount: round(discount + billDiscount),
+			billDiscount: billDiscount,
+			billOffer: offer ? offer.label : "",
+			factor: factor,
+			tax: tax,
+			grand: grand,
+			loyaltyPoints: loyaltyPoints,
+			loyaltyAmount: loyaltyAmount,
+			due: round(grand - loyaltyAmount),
 			count: state.cart.reduce(function (sum, line) {
 				return sum + num(line.qty);
 			}, 0),
@@ -982,6 +1063,7 @@
 	}
 
 	function renderCart() {
+		var summary = totals();
 		if (!state.cart.length) {
 			dom["rp-cart"].innerHTML = '<div class="rp-empty">Scan a barcode or tap a product to start a bill.</div>';
 		} else {
@@ -1012,7 +1094,7 @@
 							: "") +
 						"</div></div>" +
 						'<div class="rp-line-amount">' +
-						esc(money(lineAmount(line) + lineTax(line))) +
+						esc(money((lineAmount(line) + lineTax(line)) * (summary.factor || 1))) +
 						"</div>" +
 						'<div class="rp-line-actions">' +
 						'<button class="rp-qty-btn" data-action="dec" data-index="' +
@@ -1044,14 +1126,94 @@
 		dom["rp-total-grand"].textContent = money(summary.grand);
 		dom["rp-cart-count"].textContent = summary.count;
 
+		if (dom["rp-total-offer"]) {
+			dom["rp-total-offer"].hidden = !summary.billDiscount;
+			if (summary.billDiscount) {
+				dom["rp-total-offer"].firstChild.textContent = summary.billOffer || "Bill offer";
+				dom["rp-total-offer"].lastChild.textContent = "−" + money(summary.billDiscount);
+			}
+		}
+
+		renderLoyalty(summary);
+
 		if (!state.tenderedTouched) {
-			dom["rp-tendered"].value = summary.grand ? summary.grand.toFixed(2) : "";
+			dom["rp-tendered"].value = summary.due ? summary.due.toFixed(2) : "";
 		}
 		dom["rp-checkout"].disabled = !state.cart.length || (state.can.create_invoice === false);
 
 		dom["rp-tab-count"].hidden = !summary.count;
 		dom["rp-tab-count"].textContent = summary.count;
 		dom["rp-tab-total"].textContent = summary.grand ? money(summary.grand) : "";
+	}
+
+	function renderLoyalty(summary) {
+		var points = dom["rp-customer-points"];
+		var wrap = dom["rp-loyalty-wrap"];
+		if (!points || !wrap) {
+			return;
+		}
+		var settings = loyaltySettings();
+		var hasCustomer = Boolean(state.customer.id);
+		points.hidden = !(settings.enabled && (hasCustomer || num(state.customer.points)));
+		if (!points.hidden) {
+			points.textContent =
+				(state.customer.name || "Customer") + " · " + num(state.customer.points) + " loyalty points";
+		}
+
+		var usable = settings.enabled && hasCustomer && num(state.customer.points) > 0 && summary.grand > 0;
+		wrap.hidden = !usable;
+		if (!usable) {
+			state.loyaltyPoints = 0;
+			dom["rp-loyalty-points"].value = "0";
+			return;
+		}
+
+		var maxPoints = Math.min(
+			Math.floor(num(state.customer.points)),
+			Math.floor((summary.grand * settings.maxPercent) / 100 / settings.value)
+		);
+		dom["rp-loyalty-points"].max = maxPoints;
+		if (num(dom["rp-loyalty-points"].value) !== summary.loyaltyPoints) {
+			dom["rp-loyalty-points"].value = summary.loyaltyPoints;
+			state.loyaltyPoints = summary.loyaltyPoints;
+		}
+		var hint = document.getElementById("rp-loyalty-hint");
+		if (hint) {
+			hint.textContent = "(up to " + maxPoints + ", 1 = " + money(settings.value) + ")";
+		}
+	}
+
+	/* ----------------------------------------------------------------- customer */
+	function lookupCustomer(mobile) {
+		var value = String(mobile || "").trim();
+		if (value.length < 6 || !navigator.onLine) {
+			return;
+		}
+		RetailSync.api("customers.find_customer", { query: value })
+			.then(function (outcome) {
+				var customer = outcome && outcome.customer;
+				if (!customer || String(customer.mobile || "") !== value) {
+					// not a known number: the bill stays walk-in unless a name is typed
+					state.customer.id = null;
+					state.customer.points = 0;
+					renderCart();
+					return;
+				}
+				state.customer.id = customer.name;
+				state.customer.points = num(customer.loyalty_points);
+				if (!state.customer.name) {
+					state.customer.name = customer.customer_name;
+					dom["rp-customer-name"].value = customer.customer_name;
+				}
+				if (!state.customer.gstin && customer.gstin) {
+					state.customer.gstin = customer.gstin;
+					dom["rp-customer-gstin"].value = customer.gstin;
+				}
+				toast(customer.customer_name + " · " + num(customer.loyalty_points) + " points");
+				saveCart();
+				renderCart();
+			})
+			.catch(function () {});
 	}
 
 	/* -------------------------------------------------------------- cart logic */
@@ -1148,39 +1310,109 @@
 		openModal({
 			title: "Return a bill",
 			html:
-				'<label class="rp-field"><span>Bill number</span>' +
-				'<input id="rp-return-invoice" type="text" autocomplete="off" placeholder="RI-2026-00042"></label>' +
-				'<p class="rp-muted">Type the bill number to load the items that can still come back.</p>',
+				'<label class="rp-field"><span>Bill number or customer mobile</span>' +
+				'<input id="rp-return-query" type="search" autocomplete="off" placeholder="RI-2026-00042 or 9876543210"></label>' +
+				'<p class="rp-muted">A mobile number lists that customer\u2019s recent bills, so the paper slip is not needed.</p>',
 			okText: "Find bill",
 			cancelText: "Cancel",
 		});
 		dom["rp-modal-ok"].onclick = function () {
-			var input = document.getElementById("rp-return-invoice");
-			var invoice = input ? input.value.trim() : "";
-			if (!invoice) {
-				toast("Type the bill number", "error");
+			var input = document.getElementById("rp-return-query");
+			var query = input ? input.value.trim() : "";
+			if (!query) {
+				toast("Type a bill number or mobile", "error");
 				return;
 			}
 			dom["rp-modal-ok"].disabled = true;
 			dom["rp-modal-ok"].textContent = "Looking…";
-			RetailSync.api("returns.get_returnable", { invoice: invoice })
-				.then(function (detail) {
+			RetailSync.api("returns.find_bills", { query: query })
+				.then(function (outcome) {
 					dom["rp-modal-ok"].disabled = false;
 					dom["rp-modal-ok"].textContent = "Find bill";
-					renderReturnForm(detail);
+					var bills = (outcome && outcome.bills) || [];
+					if (!bills.length) {
+						toast("No bill matches " + query, "error");
+						return;
+					}
+					if (bills.length === 1) {
+						loadReturnable(bills[0].name);
+						return;
+					}
+					renderBillPicker(bills, query);
 				})
 				.catch(function (error) {
 					dom["rp-modal-ok"].disabled = false;
 					dom["rp-modal-ok"].textContent = "Find bill";
-					toast((error && error.message) || "Could not find that bill", "error");
+					toast((error && error.message) || "Could not look up that bill", "error");
 				});
 		};
 		global.setTimeout(function () {
-			var input = document.getElementById("rp-return-invoice");
+			var input = document.getElementById("rp-return-query");
 			if (input) {
 				input.focus();
 			}
 		}, 40);
+	}
+
+	function renderBillPicker(bills, query) {
+		dom["rp-modal-title"].textContent = "Pick the bill";
+		dom["rp-modal-body"].innerHTML =
+			'<p class="rp-muted">' +
+			esc(bills.length + " bills match \u201c" + query + "\u201d") +
+			"</p>" +
+			'<div class="rp-return-list">' +
+			bills
+				.map(function (bill, index) {
+					return (
+						'<button class="rp-pick' +
+						(bill.can_return ? "" : " is-done") +
+						'" type="button" data-bill-index="' +
+						index +
+						'">' +
+						'<span class="rp-return-name">' +
+						esc(bill.name) +
+						"</span>" +
+						'<span class="rp-return-meta">' +
+						esc(String(bill.posting_datetime || "").slice(0, 16)) +
+						" · " +
+						esc(money(bill.grand_total)) +
+						(bill.customer_mobile ? " · " + esc(bill.customer_mobile) : "") +
+						(bill.can_return ? "" : " · fully returned") +
+						"</span></button>"
+					);
+				})
+				.join("") +
+			"</div>";
+
+		dom["rp-modal-ok"].hidden = true;
+		dom["rp-modal-ok"].disabled = false;
+		dom["rp-modal-ok"].textContent = "Find bill";
+		Array.prototype.forEach.call(document.querySelectorAll("[data-bill-index]"), function (button) {
+			button.addEventListener("click", function () {
+				var bill = bills[parseInt(button.getAttribute("data-bill-index"), 10)];
+				if (!bill) {
+					return;
+				}
+				dom["rp-modal-ok"].hidden = false;
+				loadReturnable(bill.name);
+			});
+		});
+	}
+
+	function loadReturnable(invoice) {
+		dom["rp-modal-ok"].hidden = false;
+		dom["rp-modal-ok"].disabled = true;
+		dom["rp-modal-ok"].textContent = "Loading…";
+		RetailSync.api("returns.get_returnable", { invoice: invoice })
+			.then(function (detail) {
+				dom["rp-modal-ok"].disabled = false;
+				renderReturnForm(detail);
+			})
+			.catch(function (error) {
+				dom["rp-modal-ok"].disabled = false;
+				dom["rp-modal-ok"].textContent = "Find bill";
+				toast((error && error.message) || "Could not open that bill", "error");
+			});
 	}
 
 	function renderReturnForm(detail) {
@@ -1801,11 +2033,18 @@
 
 		var mode = dom["rp-pay-mode"].value;
 		var tendered = num(dom["rp-tendered"].value);
+		var loyaltyAmount = round(summary.loyaltyAmount || 0);
+		var cashDue = round(summary.grand - loyaltyAmount);
 		var payments = [];
-		if (mode === "Credit") {
-			payments.push({ mode: "Credit", amount: summary.grand });
-		} else {
-			payments.push({ mode: mode, amount: tendered > 0 ? round(tendered) : summary.grand });
+		if (loyaltyAmount > 0) {
+			payments.push({ mode: "Loyalty", amount: loyaltyAmount });
+		}
+		if (cashDue > 0.005) {
+			if (mode === "Credit") {
+				payments.push({ mode: "Credit", amount: cashDue });
+			} else {
+				payments.push({ mode: mode, amount: tendered > 0 ? round(tendered) : cashDue });
+			}
 		}
 
 		var offlineUuid = RetailDB.uuid();
@@ -1815,6 +2054,7 @@
 			warehouse: state.warehouse.name,
 			day_session: state.session.name || state.session.offline_uuid,
 			posting_datetime: serverNow(),
+			customer: state.customer.id || null,
 			customer_name: state.customer.name || null,
 			customer_mobile: state.customer.mobile || null,
 			customer_gstin: (state.customer.gstin || "").trim().toUpperCase() || null,
@@ -1830,27 +2070,35 @@
 		};
 		var receipt = {
 			lines: state.cart.map(function (line) {
+				// net of the line discount and of its share of any bill offer, so the
+				// printed lines add up to the subtotal below them
+				var total = round(lineAmount(line) * (summary.factor || 1));
+				var qty = num(line.qty) || 1;
 				return {
 					item_name: line.item_name,
 					qty: line.qty,
-					rate: line.rate,
-					total: round(lineAmount(line) + lineTax(line)),
+					rate: round(total / qty),
+					total: total,
 				};
 			}),
 			totals: summary,
-			mode: mode,
+			mode: loyaltyAmount > 0 ? mode + " + points" : mode,
 			tendered: tendered,
-			change: mode === "Credit" ? 0 : round(Math.max(0, tendered - summary.grand)),
+			change: mode === "Credit" ? 0 : round(Math.max(0, tendered - cashDue)),
 			customer: state.customer.name,
 			gstin: state.customer.gstin,
+			loyaltyPoints: summary.loyaltyPoints || 0,
+			loyaltyAmount: loyaltyAmount,
 			posting_datetime: payload.posting_datetime,
 			cashier: (state.catalog && state.catalog.full_name) || "",
 		};
 
 		deductLocalStock(state.cart);
 
+		var newCustomer = !state.customer.id && state.customer.name && state.customer.mobile && navigator.onLine;
 		state.cart = [];
-		state.customer = { name: "", mobile: "", gstin: "" };
+		state.customer = { id: null, name: "", mobile: "", gstin: "", points: 0 };
+		state.loyaltyPoints = 0;
 		state.tenderedTouched = false;
 		dom["rp-customer-name"].value = "";
 		dom["rp-customer-mobile"].value = "";
@@ -1860,7 +2108,26 @@
 
 		dom["rp-checkout"].disabled = true;
 
-		RetailDB.enqueue({ id: offlineUuid, type: "invoice", payload: payload })
+		var prepare = Promise.resolve();
+		if (newCustomer) {
+			// enrol the walk-in first, so the bill is linked to the new record
+			prepare = RetailSync.api("customers.save_customer", {
+				customer_name: payload.customer_name,
+				mobile: payload.customer_mobile,
+				gstin: payload.customer_gstin,
+			})
+				.then(function (outcome) {
+					if (outcome && outcome.customer) {
+						payload.customer = outcome.customer.name;
+					}
+				})
+				.catch(function () {});
+		}
+
+		prepare
+			.then(function () {
+				return RetailDB.enqueue({ id: offlineUuid, type: "invoice", payload: payload });
+			})
 			.then(function () {
 				toast(navigator.onLine ? "Bill saved, syncing…" : "Bill stored offline", "success");
 				return RetailSync.flush();
@@ -2293,11 +2560,12 @@
 		});
 		lines.push("");
 		lines.push("Subtotal      " + round(receipt.totals.net).toFixed(2));
-		if (receipt.totals.discount) {
-			lines.push("Discount     -" + round(receipt.totals.discount).toFixed(2));
-		}
 		lines.push("Tax           " + round(receipt.totals.tax).toFixed(2));
 		lines.push("TOTAL         " + round(receipt.totals.grand).toFixed(2));
+		if (receipt.totals.discount) {
+			// line and bill discounts are already taken off the lines above
+			lines.push("You saved     " + round(receipt.totals.discount).toFixed(2));
+		}
 		lines.push(receipt.mode + "          " + round(receipt.tendered || receipt.totals.grand).toFixed(2));
 		if (receipt.change) {
 			lines.push("Change        " + round(receipt.change).toFixed(2));
