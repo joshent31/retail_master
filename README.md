@@ -41,6 +41,7 @@ DocTypes, so it installs on a plain Frappe v16 bench.
 - [API](#api)
 - [Desk workflows](#desk-workflows)
 - [Customising](#customising)
+- [Functional flows and customer SOP](docs/flows.md)
 - [Limitations / roadmap](#limitations--roadmap)
 - [License](#license)
 
